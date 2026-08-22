@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <vector>
 
+#include "encoder/halftone.h"
 #include "encoder/job.h"
 #include "encoder/line.h"
 
@@ -44,10 +45,78 @@ bool contains(const std::vector<uint8_t>& hay, const char* needle) {
 
 }  // namespace
 
+int popcount_row(const uint8_t* packed, unsigned width) {
+  unsigned n = 0;
+  for (unsigned x = 0; x < width; ++x) {
+    if (packed[x / 8] & static_cast<uint8_t>(0x80 >> (x % 8))) {
+      ++n;
+    }
+  }
+  return static_cast<int>(n);
+}
+
 int main() {
   using sisterhl2030::encode_line;
   using sisterhl2030::Job;
   using sisterhl2030::PageParams;
+  using sisterhl2030::device_gray_to_toner;
+  using sisterhl2030::device_k_to_toner;
+  using sisterhl2030::floyd_steinberg;
+  using sisterhl2030::pack_toner_row;
+  using sisterhl2030::rgb_to_toner;
+
+  {
+    const unsigned w = 256;
+    const unsigned h = 64;
+    std::vector<uint8_t> toner(w * h, 128);
+    floyd_steinberg(toner.data(), w, h);
+    std::vector<uint8_t> packed((w + 7) / 8);
+    int black = 0;
+    for (unsigned y = 0; y < h; ++y) {
+      pack_toner_row(toner.data() + y * w, w, packed.data());
+      black += popcount_row(packed.data(), w);
+    }
+    const int total = static_cast<int>(w * h);
+    expect(black > total / 5 && black < (total * 4) / 5,
+           "mid-gray Floyd-Steinberg is mixed, not a 50% hard threshold slab");
+    std::vector<uint8_t> ramp(w);
+    for (unsigned x = 0; x < w; ++x) {
+      ramp[x] = rgb_to_toner(static_cast<uint8_t>(x), static_cast<uint8_t>(x),
+                             static_cast<uint8_t>(x));
+    }
+    std::vector<uint8_t> ramp_page = ramp;
+    ramp_page.resize(w * 8);
+    for (unsigned y = 1; y < 8; ++y) {
+      std::memcpy(ramp_page.data() + y * w, ramp.data(), w);
+    }
+    floyd_steinberg(ramp_page.data(), w, 8);
+    int dark = 0, light = 0;
+    for (unsigned y = 0; y < 8; ++y) {
+      for (unsigned x = 0; x < 32; ++x) {
+        if (ramp_page[y * w + x] >= 128) {
+          ++dark;
+        }
+        if (ramp_page[y * w + (w - 32 + x)] >= 128) {
+          ++light;
+        }
+      }
+    }
+    expect(dark > light * 2, "ramp keeps contrast (dark end much blacker)");
+    expect(rgb_to_toner(255, 255, 255) == 0, "white RGB is no toner");
+    expect(rgb_to_toner(0, 0, 0) == 255, "black RGB is full toner");
+    {
+      const int mid = rgb_to_toner(128, 128, 128);
+      expect(mid > 40 && mid < 120,
+             "sRGB mid-grey is a light-mid toner load, not ~75%");
+      const int pastel = rgb_to_toner(162, 184, 229);
+      expect(pastel > 45 && pastel < 110,
+             "pastel blue keeps a visible dither, not ~10% toner");
+    }
+    expect(device_gray_to_toner(255) == 0, "DeviceGray 255 is white");
+    expect(device_k_to_toner(0) == 0, "DeviceK 0 is white");
+    expect(device_k_to_toner(255) == 255, "DeviceK 255 is black");
+    expect(rgb_to_toner(255, 255, 0) < 80, "yellow is light, not solid black");
+  }
 
   // White line compresses to a single 0xFF.
   const std::vector<uint8_t> white(16, 0);

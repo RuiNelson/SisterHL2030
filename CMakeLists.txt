@@ -12,6 +12,7 @@ endif()
 add_library(sisterhl2030_encoder
   src/encoder/job.cc
   src/encoder/line.cc
+  src/encoder/halftone.cc
 )
 target_include_directories(sisterhl2030_encoder PUBLIC src)
 target_compile_options(sisterhl2030_encoder PRIVATE
@@ -20,6 +21,9 @@ target_compile_options(sisterhl2030_encoder PRIVATE
 
 add_executable(sister-rawtobr src/tools/rawtobr.cpp)
 target_link_libraries(sister-rawtobr PRIVATE sisterhl2030_encoder)
+
+add_executable(sister-preview src/tools/preview_halftone.cpp)
+target_link_libraries(sister-preview PRIVATE sisterhl2030_encoder)
 
 add_executable(rastertosisterhl2030 src/cups/rastertosisterhl2030.cpp)
 target_include_directories(rastertosisterhl2030 PRIVATE src)

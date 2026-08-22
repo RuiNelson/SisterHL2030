@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "encoder/halftone.h"
 #include "encoder/job.h"
 
 namespace {
@@ -139,58 +140,53 @@ int pjl_resolution(const cups_page_header2_t& h) {
   return 300;
 }
 
-bool pixel_is_black(const cups_page_header2_t& h, const unsigned char* pixel) {
-  const int bpp = static_cast<int>(h.cupsBitsPerPixel);
-  const int bpc = static_cast<int>(h.cupsBitsPerColor);
-  if (bpp == 1 || (bpc == 1 && h.cupsNumColors <= 1)) {
-    return false;  // handled as packed bits
+uint8_t sample8(const unsigned char* p, int bpc) {
+  if (bpc >= 16) {
+    return p[0];  // high byte of 16-bit big-endian-ish sample
   }
-  if (h.cupsColorSpace == CUPS_CSPACE_K || h.cupsColorSpace == CUPS_CSPACE_W ||
-      h.cupsColorSpace == CUPS_CSPACE_SW || h.cupsColorSpace == CUPS_CSPACE_WHITE ||
-      h.cupsColorSpace == CUPS_CSPACE_GRAYE || h.cupsNumColors <= 1) {
-    unsigned v = pixel[0];
-    if (bpc == 16) {
-      v = (pixel[0] << 8) | pixel[1];
-      if (h.cupsColorSpace == CUPS_CSPACE_K) {
-        return v >= 32768;
-      }
-      return v < 32768;  // DeviceGray: 0 is black
-    }
-    if (h.cupsColorSpace == CUPS_CSPACE_K) {
-      return v >= 128;  // 0 = white
-    }
-    return v < 128;  // DeviceGray: 0 = black
-  }
-  // RGB-ish: toner if not near-white.
-  const int r = pixel[0];
-  const int g = h.cupsNumColors > 1 ? pixel[1] : r;
-  const int b = h.cupsNumColors > 2 ? pixel[2] : r;
-  return (r + g + b) < 384;
+  return p[0];
 }
 
-void pack_row(const cups_page_header2_t& h, const unsigned char* src,
-              std::vector<uint8_t>& dst) {
+uint8_t toner_at(const cups_page_header2_t& h, const unsigned char* pixel) {
+  const int bpc = static_cast<int>(h.cupsBitsPerColor);
+  const unsigned n = std::max(1u, h.cupsNumColors);
+
+  if (h.cupsColorSpace == CUPS_CSPACE_K) {
+    return sisterhl2030::device_k_to_toner(sample8(pixel, bpc));
+  }
+  if (h.cupsColorSpace == CUPS_CSPACE_W || h.cupsColorSpace == CUPS_CSPACE_SW ||
+      h.cupsColorSpace == CUPS_CSPACE_WHITE ||
+      h.cupsColorSpace == CUPS_CSPACE_GRAYE || n == 1) {
+    return sisterhl2030::device_gray_to_toner(sample8(pixel, bpc));
+  }
+
+  const int bytes_pc = std::max(1, bpc / 8);
+  const uint8_t r = sample8(pixel, bpc);
+  const uint8_t g = n > 1 ? sample8(pixel + bytes_pc, bpc) : r;
+  const uint8_t b = n > 2 ? sample8(pixel + 2 * bytes_pc, bpc) : r;
+  return sisterhl2030::rgb_to_toner(r, g, b);
+}
+
+void row_to_toner(const cups_page_header2_t& h, const unsigned char* src,
+                  std::vector<uint8_t>& toner) {
+  const unsigned width = h.cupsWidth;
+  toner.resize(width);
+  const unsigned bytes_pp = std::max(1u, h.cupsBitsPerPixel / 8);
+  for (unsigned x = 0; x < width; ++x) {
+    toner[x] = toner_at(h, src + x * bytes_pp);
+  }
+}
+
+void pack_1bit_row(const cups_page_header2_t& h, const unsigned char* src,
+                   std::vector<uint8_t>& dst) {
   const unsigned width = h.cupsWidth;
   const unsigned out_bpl = (width + 7) / 8;
   dst.assign(out_bpl, 0);
-
-  if (h.cupsBitsPerPixel == 1 && h.cupsNumColors <= 1) {
-    const unsigned in_bpl = h.cupsBytesPerLine;
-    const unsigned n = std::min(in_bpl, out_bpl);
-    std::memcpy(dst.data(), src, n);
-    if (h.cupsColorSpace == CUPS_CSPACE_W ||
-        h.cupsColorSpace == CUPS_CSPACE_SW) {
-      for (unsigned i = 0; i < n; ++i) {
-        dst[i] = static_cast<uint8_t>(~dst[i]);
-      }
-    }
-    return;
-  }
-
-  const unsigned bytes_pp = std::max(1u, h.cupsBitsPerPixel / 8);
-  for (unsigned x = 0; x < width; ++x) {
-    if (pixel_is_black(h, src + x * bytes_pp)) {
-      dst[x / 8] |= static_cast<uint8_t>(0x80 >> (x % 8));
+  const unsigned n = std::min(h.cupsBytesPerLine, out_bpl);
+  std::memcpy(dst.data(), src, n);
+  if (h.cupsColorSpace == CUPS_CSPACE_W || h.cupsColorSpace == CUPS_CSPACE_SW) {
+    for (unsigned i = 0; i < n; ++i) {
+      dst[i] = static_cast<uint8_t>(~dst[i]);
     }
   }
 }
@@ -250,19 +246,74 @@ int main(int argc, char* argv[]) {
     params.papersize = pjl_paper(header);
     params.mediatype = pjl_media(header.MediaType, header.cupsMediaType);
 
+    const bool already_1bit =
+        header.cupsBitsPerPixel == 1 && header.cupsNumColors <= 1;
+    std::fprintf(stderr,
+                 "INFO: page %ux%u %ubit/%u colorspace=%u 1bit=%s\n",
+                 header.cupsWidth, header.cupsHeight, header.cupsBitsPerPixel,
+                 header.cupsNumColors, header.cupsColorSpace,
+                 already_1bit ? "passthrough" : "Floyd-Steinberg");
+
     raw_line.resize(header.cupsBytesPerLine);
     packed.resize((header.cupsWidth + 7) / 8);
+
+    std::vector<uint8_t> page_bits;
+    if (already_1bit) {
+      page_bits.resize(static_cast<size_t>(header.cupsBytesPerLine) *
+                       header.cupsHeight);
+      for (unsigned y = 0; y < header.cupsHeight; ++y) {
+        if (cupsRasterReadPixels(ras, raw_line.data(), header.cupsBytesPerLine) !=
+            header.cupsBytesPerLine) {
+          std::fprintf(stderr, "ERROR: short raster read\n");
+          cupsRasterClose(ras);
+          return 1;
+        }
+        pack_1bit_row(header, raw_line.data(), packed);
+        std::memcpy(page_bits.data() + static_cast<size_t>(y) * packed.size(),
+                    packed.data(), packed.size());
+      }
+    } else {
+      std::vector<uint8_t> toner(static_cast<size_t>(header.cupsWidth) *
+                                 header.cupsHeight);
+      std::vector<uint8_t> row_toner;
+      long toner_sum = 0;
+      for (unsigned y = 0; y < header.cupsHeight; ++y) {
+        if (cupsRasterReadPixels(ras, raw_line.data(), header.cupsBytesPerLine) !=
+            header.cupsBytesPerLine) {
+          std::fprintf(stderr, "ERROR: short raster read\n");
+          cupsRasterClose(ras);
+          return 1;
+        }
+        row_to_toner(header, raw_line.data(), row_toner);
+        std::memcpy(toner.data() + static_cast<size_t>(y) * header.cupsWidth,
+                    row_toner.data(), header.cupsWidth);
+        for (uint8_t t : row_toner) {
+          toner_sum += t;
+        }
+      }
+      const double mean =
+          static_cast<double>(toner_sum) /
+          (static_cast<double>(header.cupsWidth) * header.cupsHeight);
+      std::fprintf(stderr, "INFO: mean toner before dither %.1f / 255\n", mean);
+      sisterhl2030::floyd_steinberg(toner.data(), header.cupsWidth,
+                                    header.cupsHeight);
+      page_bits.resize(packed.size() * header.cupsHeight);
+      for (unsigned y = 0; y < header.cupsHeight; ++y) {
+        sisterhl2030::pack_toner_row(
+            toner.data() + static_cast<size_t>(y) * header.cupsWidth,
+            header.cupsWidth, packed.data());
+        std::memcpy(page_bits.data() + static_cast<size_t>(y) * packed.size(),
+                    packed.data(), packed.size());
+      }
+    }
+
     unsigned row = 0;
     auto next_line = [&](std::vector<uint8_t>& buf) {
-      if (interrupted || row >= header.cupsHeight) {
+      if (row >= header.cupsHeight) {
         return false;
       }
-      if (cupsRasterReadPixels(ras, raw_line.data(), header.cupsBytesPerLine) !=
-          header.cupsBytesPerLine) {
-        return false;
-      }
-      pack_row(header, raw_line.data(), packed);
-      buf = packed;
+      buf.assign(page_bits.data() + static_cast<size_t>(row) * packed.size(),
+                 page_bits.data() + static_cast<size_t>(row + 1) * packed.size());
       ++row;
       return true;
     };
