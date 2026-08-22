@@ -73,6 +73,12 @@ int main() {
   expect(attrs.find("type=toner") != std::string::npos, "supply toner");
   expect(attrs.find("type=opc") != std::string::npos, "supply opc");
   expect(attrs.find("wasteToner") == std::string::npos, "no fake waste toner");
+  expect(attrs.find("ATTR: marker-levels=100,70\n") != std::string::npos,
+         "marker-levels for the Supply Levels panel");
+  const std::string unknown_attrs =
+      sisterhl2030::ippeve_attr_lines(parse_pjl_status(""));
+  expect(unknown_attrs.find("ATTR: marker-levels=-2,-2\n") != std::string::npos,
+         "unknown levels stay -2, not 0");
   const std::string desc = sisterhl2030::printer_supply_description();
   expect(desc.find("TN-2000") != std::string::npos, "TN-2000 name");
   expect(desc.find("DR-2000") != std::string::npos, "DR-2000 name");

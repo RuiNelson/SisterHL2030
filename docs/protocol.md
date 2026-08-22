@@ -199,7 +199,14 @@ cartridge sensor is **not** a continuous percentage: Sister maps OK → 100,
 low → 15, empty → 0. Drum remaining is `round(100 × (12000 − DRUMLIFE) /
 12000)` (rated life from the service/user manuals).
 
-Levels are published as IPP `printer-supply` (toner + OPC). Apple's
+Levels are published twice, because the two consumers read different
+attributes. IPP `printer-supply` (toner + OPC) drives the printer's own
+`/supplies` page, while the macOS Supply Levels panel reads the classic
+`marker-levels` / `marker-names` set — a printer that publishes only
+`printer-supply` shows "no information available" there. CUPS copies
+`marker-*` from the device onto the queue when a job runs through the
+backend, so the panel refreshes on the next print, not on the daemon's
+3-minute poll. Apple's
 `ippeveprinter` hard-codes a waste-toner + toner pair on its `/supplies`
 form, so Sister sets the real octetString via `ATTR:` on the print command
 (and on a no-op job named `.sister-status` every 3 minutes).

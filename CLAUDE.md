@@ -67,6 +67,15 @@ short-circuits into `sister-status --ipp`, whose `ATTR:`/`STATE:` stderr lines
 every real job. Keep the `.sister-status` job-name sentinel in sync across
 `src/tools/sister_status.cpp` and `src/cups/sister-ipp-command.sh`.
 
+Levels go out as **both** `printer-supply` and the classic `marker-*`
+attributes. The macOS Supply Levels panel reads `marker-levels`/`marker-names`
+only — publishing `printer-supply` alone makes it show "no information
+available". The static half (`marker-names`, `marker-types`, `marker-colors`,
+`marker-low-levels`, `marker-high-levels`) lives in `printer-attrs.conf`;
+`ippeve_attr_lines()` refreshes `marker-levels` at runtime. CUPS copies
+`marker-*` onto the queue only when a job passes through the backend, so the
+panel updates on the next print rather than on the daemon's 3-minute poll.
+
 The HL-2030 toner is a three-state sensor (OK/low/empty → 100/15/0 percent);
 drum remaining is estimated from PJL `DRUMLIFE` against 12 000 rated pages
 (`kDrumRatedPages`). USB status uses IOKit directly (`src/status/usb_printer.cc`,

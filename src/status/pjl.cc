@@ -223,6 +223,10 @@ std::string serial_from_device_uri(const std::string& uri) {
 std::string ippeve_attr_lines(const PrinterStatus& st) {
   std::ostringstream os;
   os << "ATTR: printer-supply=" << printer_supply_octet(st) << "\n";
+  // The Supply Levels panel reads marker-levels, so refresh it too. CUPS
+  // picks these up off the queue's backend on the next job.
+  os << "ATTR: marker-levels=" << st.toner_percent << "," << st.drum_percent
+     << "\n";
   os << "STATE: -toner-low,-toner-empty,-opc-life-almost-over,-opc-life-over,"
         "-marker-waste-full-report,-marker-waste-almost-full-report,"
         "-marker-supply-low-warning\n";
