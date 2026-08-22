@@ -25,13 +25,13 @@ int main() {
   using sisterhl2030::TonerState;
 
   const std::string ready =
-      "@PJL INFO STATUS\r\nCODE=10001\r\nDISPLAY=\"PRONTO          \"\r\n"
+      "@PJL INFO STATUS\r\nCODE=10001\r\nDISPLAY=\"READY           \"\r\n"
       "ONLINE=TRUE\r\n\x0c"
       "@PJL INFO PAGECOUNT\r\nPAGECOUNT=3616\r\n\x0c"
       "@PJL INFO DRUMLIFE\r\nDRUMLIFE=3616\r\n\x0c";
   auto st = parse_pjl_status(ready);
   expect(st.have_status && st.code == 10001, "ready CODE");
-  expect(st.display == "PRONTO", "trim DISPLAY");
+  expect(st.display == "READY", "trim DISPLAY");
   expect(st.online, "ONLINE");
   expect(st.pagecount == 3616 && st.drumlife == 3616, "counters");
   expect(st.toner == TonerState::ok && st.toner_percent == 100, "toner OK -> 100%");
@@ -39,11 +39,11 @@ int main() {
   expect(!st.toner_low && !st.drum_low, "not low");
 
   const std::string sleep =
-      "@PJL INFO STATUS\r\nCODE=40000\r\nDISPLAY=\"INACTIVO        \"\r\n"
+      "@PJL INFO STATUS\r\nCODE=40000\r\nDISPLAY=\"SLEEP           \"\r\n"
       "ONLINE=TRUE\r\n\x0c";
   st = parse_pjl_status(sleep);
   expect(st.toner == TonerState::ok, "sleep is not toner empty");
-  expect(st.display == "INACTIVO", "inactive display");
+  expect(st.display == "SLEEP", "sleep display");
 
   st = parse_pjl_status("@PJL INFO STATUS\r\nCODE=10006\r\nDISPLAY=\"TONER LOW       \"\r\n\x0c");
   expect(st.toner == TonerState::low && st.toner_percent == 15 && st.toner_low,
@@ -54,12 +54,20 @@ int main() {
          "toner empty");
 
   st = parse_pjl_status(
-      "@PJL INFO STATUS\r\nCODE=10001\r\nDISPLAY=\"PRONTO          \"\r\n\x0c"
+      "@PJL INFO STATUS\r\nCODE=10001\r\nDISPLAY=\"READY           \"\r\n\x0c"
       "@PJL INFO DRUMLIFE\r\nDRUMLIFE=12000\r\n\x0c");
   expect(st.drum_percent == 0 && st.drum_empty, "drum life end");
 
   st = parse_pjl_status("@PJL INFO DRUMLIFE\r\nDRUMLIFE=11400\r\n\x0c");
   expect(st.drum_percent == 5 && st.drum_low, "drum low at 5%");
+
+  // Unmapped CODE: fall back to the English DISPLAY wording.
+  st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=30000\r\nDISPLAY=\"TONER LOW       \"\r\n\x0c");
+  expect(st.toner == TonerState::low, "unmapped code, display says low");
+  st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=30000\r\nDISPLAY=\"TONER EMPTY     \"\r\n\x0c");
+  expect(st.toner == TonerState::empty, "unmapped code, display says empty");
 
   const std::string attrs = sisterhl2030::ippeve_attr_lines(parse_pjl_status(ready));
   expect(attrs.find("type=toner") != std::string::npos, "supply toner");

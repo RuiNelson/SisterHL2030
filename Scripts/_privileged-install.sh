@@ -14,7 +14,7 @@ LABEL="system/org.sisterhl2030.printer"
 STATUS_LABEL="system/org.sisterhl2030.status"
 
 if [[ -z "$ROOT" ]]; then
-  echo "Uso interno: _privileged-install.sh ROOT QUEUE USB_URI" >&2
+  echo "Internal use: _privileged-install.sh ROOT QUEUE USB_URI" >&2
   exit 2
 fi
 
@@ -34,23 +34,23 @@ set +e
   STATUS_PLIST="$ROOT/launchd/org.sisterhl2030.status.plist"
 
   if [[ ! -x "$FILTER" ]]; then
-    echo "Falta o filtro compilado: $FILTER" >&2
+    echo "Missing the compiled filter: $FILTER" >&2
     exit 1
   fi
   if [[ ! -f "$CMD" ]]; then
-    echo "Falta o comando IPP: $CMD" >&2
+    echo "Missing the IPP command: $CMD" >&2
     exit 1
   fi
   if [[ ! -f "$PLIST" ]]; then
-    echo "Falta o LaunchDaemon: $PLIST" >&2
+    echo "Missing the LaunchDaemon: $PLIST" >&2
     exit 1
   fi
   if [[ ! -x "$STATUS_BIN" ]]; then
-    echo "Falta sister-status: $STATUS_BIN" >&2
+    echo "Missing sister-status: $STATUS_BIN" >&2
     exit 1
   fi
   if [[ ! -f "$STATUS_PLIST" ]]; then
-    echo "Falta o LaunchDaemon de estado: $STATUS_PLIST" >&2
+    echo "Missing the status LaunchDaemon: $STATUS_PLIST" >&2
     exit 1
   fi
 
@@ -68,9 +68,9 @@ set +e
   if [[ -n "$USB_URI" && "$USB_URI" != "-" ]]; then
     printf '%s\n' "$USB_URI" > "$DEST/device-uri"
   elif [[ -f "$DEST/device-uri" ]]; then
-    echo "A manter device-uri existente."
+    echo "Keeping the existing device-uri."
   else
-    echo "AVISO: sem URI USB; o comando IPP nao consegue falar com a impressora ate la rescreveres $DEST/device-uri"
+    echo "WARNING: no USB URI; the IPP command cannot talk to the printer until you write $DEST/device-uri"
   fi
   chmod 644 "$DEST/device-uri" 2>/dev/null || true
   rm -f "$DEST/toner-save"
@@ -90,11 +90,11 @@ set +e
   if launchctl bootstrap system "$PLIST_DEST" 2>/dev/null; then
     launchctl enable "$LABEL" 2>/dev/null || true
     launchctl kickstart -k "$LABEL" 2>/dev/null || true
-    echo "LaunchDaemon $LABEL iniciado."
+    echo "LaunchDaemon $LABEL started."
   elif launchctl load -w "$PLIST_DEST" 2>/dev/null; then
-    echo "LaunchDaemon carregado (launchctl load)."
+    echo "LaunchDaemon loaded (launchctl load)."
   else
-    echo "AVISO: nao consegui arrancar o LaunchDaemon; tenta: launchctl bootstrap system $PLIST_DEST" >&2
+    echo "WARNING: could not start the LaunchDaemon; try: launchctl bootstrap system $PLIST_DEST" >&2
   fi
 
   launchctl bootout "$STATUS_LABEL" 2>/dev/null || true
@@ -102,18 +102,18 @@ set +e
   if launchctl bootstrap system "$STATUS_PLIST_DEST" 2>/dev/null; then
     launchctl enable "$STATUS_LABEL" 2>/dev/null || true
     launchctl kickstart -k "$STATUS_LABEL" 2>/dev/null || true
-    echo "LaunchDaemon $STATUS_LABEL iniciado."
+    echo "LaunchDaemon $STATUS_LABEL started."
   elif launchctl load -w "$STATUS_PLIST_DEST" 2>/dev/null; then
-    echo "LaunchDaemon de estado carregado (launchctl load)."
+    echo "Status LaunchDaemon loaded (launchctl load)."
   else
-    echo "AVISO: nao consegui arrancar o daemon de estado." >&2
+    echo "WARNING: could not start the status daemon." >&2
   fi
 
-  echo "Ficheiros em $DEST"
+  echo "Files in $DEST"
   /usr/bin/file "$DEST/filter/rastertosisterhl2030"
   rm -f /etc/cups/ppd/localhost.ppd /etc/cups/ppd/HL_2030.ppd
   launchctl kickstart -k system/org.cups.cupsd 2>/dev/null || true
-  echo "SisterHL2030 instalado (Printer Application IPP na porta 8631)."
+  echo "SisterHL2030 installed (IPP Printer Application on port 8631)."
 ) >"$LOG" 2>&1
 status=$?
 chmod 644 "$LOG" 2>/dev/null || true

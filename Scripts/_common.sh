@@ -28,12 +28,12 @@ fi
 
 pause() {
   echo
-  read -r -p "Carrega Enter para fechar esta janela. " _ || true
+  read -r -p "Press Enter to close this window. " _ || true
 }
 
 die() {
   echo
-  echo "${c_red}${c_bold}Erro${c_reset}: $*"
+  echo "${c_red}${c_bold}Error${c_reset}: $*"
   pause
   exit 1
 }
@@ -49,7 +49,7 @@ banner() {
 
 require_macos() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    die "Este programa só funciona no macOS."
+    die "This program only runs on macOS."
   fi
 }
 
@@ -59,7 +59,7 @@ ask_yes() {
   echo
   read -r -p "$prompt " answer || true
   answer="$(printf '%s' "$answer" | tr '[:lower:]' '[:upper:]')"
-  [[ "$answer" == "SIM" ]]
+  [[ "$answer" == "YES" ]]
 }
 
 # Prints one "  • reason" line per hit on stdout.
@@ -67,22 +67,22 @@ ask_yes() {
 official_brother_reasons() {
   local found=1
   if pkgutil --pkg-info "$BROTHER_PKG_ID" >/dev/null 2>&1; then
-    echo "  • Pacote do sistema: $BROTHER_PKG_ID"
+    echo "  • System package: $BROTHER_PKG_ID"
     found=0
   fi
   if [[ -e "$BROTHER_DIR" ]]; then
-    echo "  • Pasta $BROTHER_DIR"
+    echo "  • Folder $BROTHER_DIR"
     found=0
   fi
   if [[ -e "$BROTHER_FILTER" ]]; then
-    echo "  • Filtro Intel rastertobrother2030"
+    echo "  • Intel filter rastertobrother2030"
     found=0
   fi
   if [[ -d "$PPD_DIR" ]]; then
     local n=0
     n="$(find "$PPD_DIR" -maxdepth 1 -name 'Brother *' 2>/dev/null | wc -l | tr -d ' ')"
     if [[ "${n:-0}" -gt 0 ]]; then
-      echo "  • $n ficheiros PPD Brother em $PPD_DIR"
+      echo "  • $n Brother PPD files in $PPD_DIR"
       found=0
     fi
   fi
@@ -98,49 +98,41 @@ has_official_brother() {
 previous_sister_reasons() {
   local found=1
   if [[ -x "$SISTER_FILTER" ]]; then
-    echo "  • Filtro $SISTER_FILTER"
+    echo "  • Filter $SISTER_FILTER"
     found=0
   fi
   if [[ -f "$PPD_DIR/Sister HL-2030.ppd" || -f "$PPD_DIR/Sister HL-2030.gz" ]]; then
-    echo "  • PPD clássico Sister HL-2030 (é isto que o CUPS marca como obsoleto)"
+    echo "  • Classic Sister HL-2030 PPD (this is what CUPS reports as deprecated)"
     found=0
   fi
-  if lpstat -v "$DEFAULT_QUEUE" 2>/dev/null | grep -q 'usb://Brother/HL-2030'; then
-    echo "  • Fila ${DEFAULT_QUEUE} ainda aponta para o USB em bruto (PPD)"
+  if LC_ALL=C lpstat -v "$DEFAULT_QUEUE" 2>/dev/null | grep -q 'usb://Brother/HL-2030'; then
+    echo "  • Queue ${DEFAULT_QUEUE} still points at raw USB (PPD)"
     found=0
   fi
   return "$found"
 }
 
 detect_hl2030_uri() {
-  lpinfo -v 2>/dev/null | awk '/usb:\/\/Brother\/HL-2030/{print $2; exit}'
+  LC_ALL=C lpinfo -v 2>/dev/null | awk '/usb:\/\/Brother\/HL-2030/{print $2; exit}'
 }
 
 # Drop extra CUPS queues that point at the Sister IPP façade, so this Mac
 # keeps a single added printer. AirPrint on the LAN still uses Bonjour.
+# LC_ALL=C keeps lpstat output in English, whatever the user's locale is.
 remove_duplicate_sister_queues() {
   local keep="${1:-$DEFAULT_QUEUE}"
   local line name uri
   while IFS= read -r line; do
-    name=""
-    uri=""
-    if [[ "$line" == "dispositivo para "* ]]; then
-      name="${line#dispositivo para }"
-      uri="${name#*: }"
-      name="${name%%:*}"
-    elif [[ "$line" == "device for "* ]]; then
-      name="${line#device for }"
-      uri="${name#*: }"
-      name="${name%%:*}"
-    else
-      continue
-    fi
+    [[ "$line" == "device for "* ]] || continue
+    name="${line#device for }"
+    uri="${name#*: }"
+    name="${name%%:*}"
     [[ "$name" == "$keep" ]] && continue
     if [[ "$uri" == *":8631"* || "$uri" == *"HL-2030._ipp._tcp"* ]]; then
-      echo "A remover fila duplicada: $name"
+      echo "Removing duplicate queue: $name"
       /usr/sbin/lpadmin -x "$name" 2>/dev/null || true
     fi
-  done < <(lpstat -v 2>/dev/null || true)
+  done < <(LC_ALL=C lpstat -v 2>/dev/null || true)
   local extra
   for extra in HL_2030 HL-2030 localhost Brother_HL_2030; do
     [[ "$extra" == "$keep" ]] && continue
@@ -170,7 +162,7 @@ on run argv
   try
     return do shell script cmd with administrator privileges with prompt thePrompt
   on error errMsg number errNum
-    error ("Passo de administrador falhou (codigo " & errNum & "):" & return & errMsg) number errNum
+    error ("Administrator step failed (code " & errNum & "):" & return & errMsg) number errNum
   end try
 end run
 APPLESCRIPT
@@ -180,7 +172,7 @@ APPLESCRIPT
   fi
   if [[ "$status" -ne 0 ]]; then
     echo
-    echo "O macOS recusou a autorização, ou o comando privilegiado saiu com erro."
+    echo "macOS refused the authorization, or the privileged command exited with an error."
     return "$status"
   fi
   return 0

@@ -132,7 +132,7 @@ bool open_interface(Opened* o, std::string* error) {
     kr = (*o->iface)->USBInterfaceOpen(o->iface);
   }
   if (kr != kIOReturnSuccess) {
-    *error = "USBInterfaceOpen failed (impressora ocupada?)";
+    *error = "USBInterfaceOpen failed (printer busy?)";
     (*o->iface)->Release(o->iface);
     o->iface = nullptr;
     return false;

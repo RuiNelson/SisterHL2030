@@ -25,9 +25,9 @@ set +e
     done < <(pkgutil --only-dirs --files "$PKG_ID" | /usr/bin/tail -r)
 
     pkgutil --forget "$PKG_ID" >/dev/null || true
-    echo "Pacote $PKG_ID removido."
+    echo "Package $PKG_ID removed."
   else
-    echo "O pacote $PKG_ID ja nao estava registado."
+    echo "Package $PKG_ID was not registered any more."
   fi
 
   rm -rf "$BROTHER_DIR"
@@ -35,7 +35,7 @@ set +e
     find "$PPD_DIR" -maxdepth 1 \( -name 'Brother *' -o -name 'Brother*' \) -exec rm -f {} + 2>/dev/null || true
   fi
 
-  echo "Concluido. SisterHL2030 nao foi tocado."
+  echo "Done. SisterHL2030 was left untouched."
 ) >"$LOG" 2>&1
 status=$?
 chmod 644 "$LOG" 2>/dev/null || true

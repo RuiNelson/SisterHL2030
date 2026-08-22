@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="${1:-}"
 DEST="/Library/Printers/SisterHL2030"
 if [[ -z "$ROOT" ]]; then
-  echo "Uso interno: _privileged-update-filter.sh ROOT" >&2
+  echo "Internal use: _privileged-update-filter.sh ROOT" >&2
   exit 2
 fi
 
@@ -15,15 +15,15 @@ FILTER="$ROOT/build/rastertosisterhl2030"
 STATUS_BIN="$ROOT/build/sister-status"
 CMD="$ROOT/src/cups/sister-ipp-command.sh"
 if [[ ! -x "$FILTER" ]]; then
-  echo "Falta o filtro compilado: $FILTER" >&2
+  echo "Missing the compiled filter: $FILTER" >&2
   exit 1
 fi
 if [[ ! -x "$STATUS_BIN" ]]; then
-  echo "Falta sister-status: $STATUS_BIN" >&2
+  echo "Missing sister-status: $STATUS_BIN" >&2
   exit 1
 fi
 if [[ ! -f "$CMD" ]]; then
-  echo "Falta o comando IPP: $CMD" >&2
+  echo "Missing the IPP command: $CMD" >&2
   exit 1
 fi
 
@@ -37,7 +37,7 @@ rm -f "$DEST/toner-save"
 touch "$DEST/status-empty" "$DEST/usb.lock"
 chmod 644 "$DEST/status-empty" "$DEST/usb.lock"
 launchctl kickstart -k system/org.sisterhl2030.status 2>/dev/null || true
-echo "Filtro actualizado:"
+echo "Filter updated:"
 /usr/bin/file "$DEST/filter/rastertosisterhl2030"
-echo "Estado USB: $DEST/filter/sister-status"
-echo "Comando IPP actualizado: $DEST/filter/sister-ipp-command"
+echo "USB status: $DEST/filter/sister-status"
+echo "IPP command updated: $DEST/filter/sister-ipp-command"

@@ -7,134 +7,135 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_common.sh
 source "$SCRIPT_DIR/_common.sh"
 
-trap 'echo; echo "${c_red}O programa parou com um erro.${c_reset}"; echo "Lê a mensagem acima — na maior parte dos casos basta instalar o que falta e voltar a tentar."; pause; exit 1' ERR
+trap 'echo; echo "${c_red}The program stopped with an error.${c_reset}"; echo "Read the message above — most of the time you just need to install what is missing and try again."; pause; exit 1' ERR
 
 require_macos
 
-banner "Instalar Sister HL-2030"
-echo "Este programa instala um driver ${c_bold}nativo para Apple Silicon${c_reset}"
-echo "da impressora Brother HL-2030 (series)."
+banner "Install Sister HL-2030"
+echo "This program installs a ${c_bold}native Apple Silicon${c_reset} driver"
+echo "for the Brother HL-2030 (series) printer."
 echo
-echo "Não usa o software Intel da Brother nem o Rosetta."
+echo "It does not use Brother's Intel software, and it does not use Rosetta."
 echo
 
-echo "${c_bold}1/4  A verificar se ainda há drivers oficiais Intel…${c_reset}"
+echo "${c_bold}1/4  Checking for leftover official Intel drivers…${c_reset}"
 echo
 reasons="$(official_brother_reasons || true)"
 if [[ -n "$reasons" ]]; then
-  echo "${c_red}${c_bold}Ainda estão instalados os drivers oficiais da Brother.${c_reset}"
+  echo "${c_red}${c_bold}The official Brother drivers are still installed.${c_reset}"
   echo
-  echo "Encontrei:"
+  echo "Found:"
   echo "$reasons"
   echo
-  echo "O SisterHL2030 ${c_bold}não se instala por cima${c_reset} do pacote Intel."
-  echo "Assim evita-se uma fila de impressão a meio caminho, a chamar"
-  echo "o filtro antigo."
+  echo "SisterHL2030 ${c_bold}will not install on top${c_reset} of the Intel package."
+  echo "That avoids a half-configured print queue that still calls the old"
+  echo "filter."
   echo
-  echo "O que fazer:"
-  echo "  1. Corre ${c_bold}Uninstall Official Brother Drivers.sh${c_reset}"
-  echo "     (está na mesma pasta que este programa)."
-  echo "  2. Volta a correr ${c_bold}Install Sister HL2030.sh${c_reset}."
+  echo "What to do:"
+  echo "  1. Run ${c_bold}Uninstall Official Brother Drivers.sh${c_reset}"
+  echo "     (it is in the same folder as this program)."
+  echo "  2. Run ${c_bold}Install Sister HL2030.sh${c_reset} again."
   echo
   pause
   exit 1
 fi
-echo "${c_green}Não há drivers oficiais. Podemos continuar.${c_reset}"
+echo "${c_green}No official drivers found. We can continue.${c_reset}"
 echo
 
-echo "${c_bold}    A verificar uma instalação anterior do SisterHL2030…${c_reset}"
+echo "${c_bold}    Checking for a previous SisterHL2030 install…${c_reset}"
 echo
 sister_old="$(previous_sister_reasons || true)"
 if [[ -n "$sister_old" ]]; then
-  echo "Encontrei a versão antiga (PPD CUPS), que o macOS marca como obsoleta:"
+  echo "Found the old version (CUPS PPD), the one macOS reports as deprecated:"
   echo "$sister_old"
   echo
-  echo "Não precisas de a desinstalar à mão. Este programa ${c_bold}substitui-a${c_reset}:"
-  echo "remove o PPD, instala o serviço IPP Everywhere e aponta a mesma fila."
+  echo "You do not need to remove it by hand. This program ${c_bold}replaces it${c_reset}:"
+  echo "it deletes the PPD, installs the IPP Everywhere service, and points the"
+  echo "same queue at it."
 else
-  echo "Não há instalação anterior do SisterHL2030."
+  echo "No previous SisterHL2030 install."
 fi
 echo
 
 arch="$(uname -m)"
 if [[ "$arch" != "arm64" ]]; then
-  echo "${c_yellow}Atenção:${c_reset} este Mac reporta arquitectura \"${arch}\", não Apple Silicon."
-  echo "O SisterHL2030 foi feito para Macs M1/M2/M3/M4."
-  if ! ask_yes "Mesmo assim queres continuar? Escreve SIM:"; then
-    echo "Cancelado."
+  echo "${c_yellow}Warning:${c_reset} this Mac reports architecture \"${arch}\", not Apple Silicon."
+  echo "SisterHL2030 was made for M1/M2/M3/M4 Macs."
+  if ! ask_yes "Continue anyway? Type YES:"; then
+    echo "Cancelled."
     pause
     exit 0
   fi
   echo
 fi
 
-echo "${c_bold}2/4  A preparar as ferramentas de compilação…${c_reset}"
+echo "${c_bold}2/4  Preparing the build tools…${c_reset}"
 if ! xcode-select -p >/dev/null 2>&1; then
-  die "Não encontrei as Command Line Tools da Apple.
-No Terminal, corre:
+  die "Could not find Apple's Command Line Tools.
+In Terminal, run:
 
     xcode-select --install
 
-Quando a instalação acabar, volta a este programa."
+When that finishes, come back to this program."
 fi
 if ! command -v cmake >/dev/null 2>&1; then
-  die "Não encontrei o CMake (é o programa que constrói o driver).
+  die "Could not find CMake (the program that builds the driver).
 
-Se tens o Homebrew, no Terminal corre:
+If you have Homebrew, run this in Terminal:
 
     brew install cmake
 
-Não tens o Homebrew? Abre https://brew.sh e segue as instruções,
-depois instala o cmake e volta aqui."
+No Homebrew? Open https://brew.sh and follow the instructions,
+then install cmake and come back here."
 fi
-echo "CMake e compilador encontrados."
+echo "CMake and compiler found."
 echo
 
-echo "${c_bold}3/4  A compilar o encoder para este Mac…${c_reset}"
-echo "${c_dim}(demora menos de um minuto na primeira vez)${c_reset}"
+echo "${c_bold}3/4  Compiling the encoder for this Mac…${c_reset}"
+echo "${c_dim}(takes less than a minute the first time)${c_reset}"
 echo
 cd "$ROOT"
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target rastertosisterhl2030 sister-status -j
 echo
 if ! file "$ROOT/build/rastertosisterhl2030" | grep -q 'arm64\|x86_64\|executable'; then
-  die "A compilação não produziu o filtro. Vê as mensagens acima."
+  die "The build did not produce the filter. See the messages above."
 fi
-echo "${c_green}Encoder compilado.${c_reset}  $(file -b "$ROOT/build/rastertosisterhl2030")"
+echo "${c_green}Encoder compiled.${c_reset}  $(file -b "$ROOT/build/rastertosisterhl2030")"
 echo
 
 uri="$(detect_hl2030_uri || true)"
 queue="$DEFAULT_QUEUE"
 if [[ -n "$uri" ]]; then
-  echo "Encontrei a HL-2030 ligada por USB:"
+  echo "Found the HL-2030 on USB:"
   echo "  $uri"
 else
-  echo "${c_yellow}Não vi uma HL-2030 no USB neste momento.${c_reset}"
-  echo "O serviço IPP mesmo assim vai ser instalado. Liga a impressora,"
-  echo "grava o URI USB em /Library/Printers/SisterHL2030/device-uri"
-  echo "e adiciona a impressora em Definições do Sistema."
+  echo "${c_yellow}No HL-2030 on USB right now.${c_reset}"
+  echo "The IPP service will still be installed. Connect the printer,"
+  echo "write the USB URI to /Library/Printers/SisterHL2030/device-uri"
+  echo "and add the printer in System Settings."
 fi
 echo
-echo "${c_yellow}Vai ser pedida a palavra-passe de administrador do Mac.${c_reset}"
-if ! ask_yes "Escreve SIM e carrega Enter para instalar:"; then
+echo "${c_yellow}You will be asked for this Mac's administrator password.${c_reset}"
+if ! ask_yes "Type YES and press Enter to install:"; then
   echo
-  echo "Cancelado. O driver foi compilado mas não foi instalado."
+  echo "Cancelled. The driver was built but not installed."
   pause
   exit 0
 fi
 
 echo
-echo "${c_bold}4/4  A instalar…${c_reset}"
+echo "${c_bold}4/4  Installing…${c_reset}"
 run_as_admin "$SCRIPT_DIR/_privileged-install.sh" \
-  "O SisterHL2030 precisa de autorização para instalar o driver nativo da HL-2030." \
+  "SisterHL2030 needs permission to install the native HL-2030 driver." \
   "$ROOT" "$queue" "${uri:--}"
 
 echo
 if [[ ! -x "$SISTER_FILTER" ]]; then
-  die "A instalação não deixou o filtro em $SISTER_FILTER."
+  die "The install did not leave the filter at $SISTER_FILTER."
 fi
 
-echo "A esperar pelo serviço IPP Everywhere em localhost:8631…"
+echo "Waiting for the IPP Everywhere service on localhost:8631…"
 ipp_ready=0
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
   if /usr/bin/nc -z localhost 8631 2>/dev/null; then
@@ -144,11 +145,11 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
   sleep 0.5
 done
 if [[ "$ipp_ready" -ne 1 ]]; then
-  echo "${c_yellow}O serviço IPP ainda não está à escuta. Vou configurar a fila na mesma.${c_reset}"
-  echo "Se a impressora não aparecer, corre outra vez este instalador."
+  echo "${c_yellow}The IPP service is not listening yet. Setting up the queue anyway.${c_reset}"
+  echo "If the printer does not show up, run this installer again."
 fi
 
-echo "A criar a fila CUPS como impressora IPP Everywhere (sem PPD)…"
+echo "Creating the CUPS queue as an IPP Everywhere printer (no PPD)…"
 if /usr/sbin/lpadmin -p "$queue" \
   -v "ipp://localhost:8631/ipp/print" \
   -E \
@@ -158,43 +159,43 @@ if /usr/sbin/lpadmin -p "$queue" \
   /usr/sbin/cupsenable "$queue" 2>/dev/null || true
   /usr/sbin/cupsaccept "$queue" 2>/dev/null || true
   /usr/sbin/lpoptions -d "$queue" 2>/dev/null || true
-  echo "${c_green}Fila \"${queue}\" aponta para ipp://localhost:8631/ipp/print${c_reset}"
+  echo "${c_green}Queue \"${queue}\" points at ipp://localhost:8631/ipp/print${c_reset}"
 else
-  echo "${c_yellow}Não consegui criar a fila automaticamente.${c_reset}"
-  echo "Em Definições do Sistema → Impressoras, adiciona uma impressora"
-  echo "IPP com o endereço ipp://localhost:8631/ipp/print."
+  echo "${c_yellow}Could not create the queue automatically.${c_reset}"
+  echo "In System Settings → Printers, add an IPP printer with the address"
+  echo "ipp://localhost:8631/ipp/print."
 fi
 remove_duplicate_sister_queues "$queue"
 
 echo
-echo "${c_green}${c_bold}Sister HL-2030 instalado.${c_reset}"
+echo "${c_green}${c_bold}Sister HL-2030 installed.${c_reset}"
 echo
-echo "Isto já não é um PPD CUPS clássico (é isso que o macOS marca como obsoleto)."
-echo "O CUPS fala IPP Everywhere com o SisterHL2030; o encoder arm64 fala"
-echo "com a HL-2030 no USB."
+echo "This is no longer a classic CUPS PPD (that is what macOS reports as"
+echo "deprecated). CUPS speaks IPP Everywhere to SisterHL2030, and the arm64"
+echo "encoder speaks to the HL-2030 over USB."
 echo
-echo "Filtro: $SISTER_FILTER"
+echo "Filter: $SISTER_FILTER"
 if [[ -x "$SISTER_FILTER" ]]; then
   echo "        $(file -b "$SISTER_FILTER")"
 fi
 echo
-echo "Para testar: abre uma página no Preview e imprime na"
+echo "To test it: open a page in Preview and print to"
 echo "\"Brother HL-2030 series\"."
 echo
-echo "No iPhone/iPad, na mesma Wi‑Fi, a impressora aparece como"
-echo "\"Brother HL-2030\" (AirPrint). Este Mac tem de estar ligado."
+echo "On an iPhone/iPad on the same Wi‑Fi, the printer shows up as"
+echo "\"Brother HL-2030\" (AirPrint). This Mac has to be switched on."
 echo
-echo "Modos no diálogo de impressão, em ${c_bold}Qualidade${c_reset}:"
-echo "  • Rascunho — 300 dpi, com poupança de toner"
-echo "  • Normal   — 600 dpi, com poupança de toner (predefinição)"
-echo "  • Alta     — HQ1200, toner cheio (o modo fino da Brother)"
+echo "Print dialog modes, under ${c_bold}Quality${c_reset}:"
+echo "  • Draft  — 300 dpi, toner saving"
+echo "  • Normal — 600 dpi, toner saving (default)"
+echo "  • Best   — HQ1200, full toner (Brother's fine mode)"
 echo
-echo "Níveis de consumíveis: Definições do Sistema → Impressoras e Scanners"
-echo "→ Brother HL-2030 series → Opções e consumíveis → Níveis de consumíveis."
-echo "O toner da HL-2030 só reporta OK / baixo / vazio (não é percentagem"
-echo "contínua). O tambor é estimado pelas páginas (cerca de 12 000)."
+echo "Supply levels: System Settings → Printers & Scanners"
+echo "→ Brother HL-2030 series → Options & Supplies → Supply Levels."
+echo "The HL-2030 toner only reports OK / low / empty (it is not a continuous"
+echo "percentage). The drum is estimated from the page count (about 12,000)."
 echo
-echo "Se a página sair em branco ou invertida, abre um problema no"
-echo "repositório SisterHL2030 e descreve o que viste."
+echo "If the page comes out blank or inverted, open an issue on the"
+echo "SisterHL2030 repository and describe what you saw."
 pause
 exit 0

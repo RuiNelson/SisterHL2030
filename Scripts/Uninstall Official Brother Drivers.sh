@@ -7,65 +7,65 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_common.sh
 source "$SCRIPT_DIR/_common.sh"
 
-trap 'echo; echo "${c_red}O programa parou com um erro.${c_reset}"; pause; exit 1' ERR
+trap 'echo; echo "${c_red}The program stopped with an error.${c_reset}"; pause; exit 1' ERR
 
 require_macos
 
-banner "Remover drivers oficiais da Brother"
-echo "Este programa desinstala o software de impressão da Brother"
-echo "que veio da Apple/Brother em 2014 e ${c_bold}só funciona em Intel${c_reset}"
-echo "(no Apple Silicon corre, no máximo, através do Rosetta)."
+banner "Remove the official Brother drivers"
+echo "This program uninstalls the Brother printing software that shipped"
+echo "from Apple/Brother in 2014 and ${c_bold}only runs on Intel${c_reset}"
+echo "(on Apple Silicon it runs through Rosetta at best)."
 echo
-echo "Não apaga o SisterHL2030 (o driver novo, nativo)."
-echo "A impressora pode deixar de imprimir até instalares o Sister HL-2030."
+echo "It does not delete SisterHL2030 (the new, native driver)."
+echo "The printer may stop printing until you install Sister HL-2030."
 echo
 
-echo "${c_bold}A procurar drivers oficiais…${c_reset}"
+echo "${c_bold}Looking for the official drivers…${c_reset}"
 echo
 reasons="$(official_brother_reasons || true)"
 if [[ -z "$reasons" ]]; then
-  echo "${c_green}Não encontrei drivers oficiais da Brother neste Mac.${c_reset}"
-  echo "Não há nada para remover. Podes passar ao «Install Sister HL2030.sh»."
+  echo "${c_green}No official Brother drivers found on this Mac.${c_reset}"
+  echo "There is nothing to remove. You can go straight to \"Install Sister HL2030.sh\"."
   pause
   exit 0
 fi
 
-echo "Encontrei isto:"
+echo "Found this:"
 echo "$reasons"
 echo
-echo "${c_yellow}Vai ser pedida a palavra-passe de administrador do Mac.${c_reset}"
-echo "É a mesma que usas para instalar programas."
+echo "${c_yellow}You will be asked for this Mac's administrator password.${c_reset}"
+echo "It is the same one you use to install programs."
 echo
-if ! ask_yes "Escreve SIM (em maiúsculas) e carrega Enter para desinstalar:"; then
+if ! ask_yes "Type YES (in capitals) and press Enter to uninstall:"; then
   echo
-  echo "Cancelado. Não foi alterado nada."
+  echo "Cancelled. Nothing was changed."
   pause
   exit 0
 fi
 
 echo
-echo "A pedir autorização…"
+echo "Requesting authorization…"
 run_as_admin "$SCRIPT_DIR/_privileged-uninstall.sh" \
-  "O SisterHL2030 precisa de autorização para remover os drivers Intel da Brother."
+  "SisterHL2030 needs permission to remove Brother's Intel drivers."
 
 echo
-echo "${c_bold}A confirmar que desapareceram…${c_reset}"
+echo "${c_bold}Confirming they are gone…${c_reset}"
 echo
 leftover="$(official_brother_reasons || true)"
 if [[ -n "$leftover" ]]; then
-  echo "${c_yellow}Ainda ficou alguma coisa:${c_reset}"
+  echo "${c_yellow}Something is still left:${c_reset}"
   echo "$leftover"
   echo
-  echo "Podes voltar a correr este programa. Se o problema continuar,"
-  echo "reinicia o Mac e tenta outra vez."
+  echo "You can run this program again. If the problem persists,"
+  echo "restart the Mac and try once more."
   pause
   exit 1
 fi
 
-echo "${c_green}Drivers oficiais da Brother removidos.${c_reset}"
+echo "${c_green}Official Brother drivers removed.${c_reset}"
 echo
-echo "Próximo passo: corre o programa"
+echo "Next step: run"
 echo "  ${c_bold}Install Sister HL2030.sh${c_reset}"
-echo "que está na mesma pasta."
+echo "from the same folder."
 pause
 exit 0

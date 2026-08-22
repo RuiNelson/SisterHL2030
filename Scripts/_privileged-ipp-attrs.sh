@@ -10,11 +10,11 @@ DEST="/Library/Printers/SisterHL2030"
 SRC="$ROOT/ipp/printer-attrs.conf"
 
 if [[ -z "$ROOT" ]]; then
-  echo "Uso interno: _privileged-ipp-attrs.sh ROOT" >&2
+  echo "Internal use: _privileged-ipp-attrs.sh ROOT" >&2
   exit 2
 fi
 if [[ ! -f "$SRC" ]]; then
-  echo "Falta $SRC" >&2
+  echo "Missing $SRC" >&2
   exit 1
 fi
 

@@ -28,7 +28,7 @@ send Brother's compressed stream over USB.
 | Protocol recovered from Linux i386 blobs | done |
 | Envelope confirmed vs official macOS `rastertobrother2030` | done |
 | Native `arm64` raster encoder (mode 1030) | prints on USB HL-2030 |
-| Toner / drum levels via USB PJL | shown in Níveis de consumíveis |
+| Toner / drum levels via USB PJL | shown in Supply Levels |
 | CLI `sister-rawtobr` (PBM → job stream) | done |
 | PAPPL printer application (IPP Everywhere façade) | next |
 | Signed macOS `.pkg` | later |
@@ -85,9 +85,8 @@ administrator password on each step.
 
 The queue is created as **IPP Everywhere** (`ipp://127.0.0.1:8631/ipp/print`)
 talking to a local `ippeveprinter` LaunchDaemon. That is the replacement
-for a CUPS PPD, which Apple already marks as deprecated (`lpadmin: os
-recursos de impressora estão obsoletos`). The daemon runs the arm64
-encoder and sends the job to the HL-2030 over USB.
+for a CUPS PPD, which `lpadmin` already reports as deprecated. The daemon
+runs the arm64 encoder and sends the job to the HL-2030 over USB.
 
 ## Architecture (v1)
 

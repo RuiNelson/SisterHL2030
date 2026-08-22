@@ -82,15 +82,16 @@ TonerState toner_from_code_and_display(int code, const std::string& display) {
       break;
   }
 
+  // Fallback for codes we do not map. DISPLAY follows the printer's own
+  // front-panel language setting, so this only fires on an English panel;
+  // CODE is the reliable signal.
   const std::string d = upper_ascii(display);
   if (d.find("TONER") != std::string::npos) {
     if (d.find("END") != std::string::npos || d.find("EMPTY") != std::string::npos ||
-        d.find("ESGOT") != std::string::npos || d.find("VAZIO") != std::string::npos ||
         d.find("LIFE") != std::string::npos) {
       return TonerState::empty;
     }
-    if (d.find("LOW") != std::string::npos || d.find("BAIXO") != std::string::npos ||
-        d.find("POUCO") != std::string::npos) {
+    if (d.find("LOW") != std::string::npos) {
       return TonerState::low;
     }
   }
@@ -139,17 +140,17 @@ int drum_remaining_percent(int drumlife) {
   return (remaining * 100 + kDrumRatedPages / 2) / kDrumRatedPages;
 }
 
-const char* toner_state_label_pt(TonerState s) {
+const char* toner_state_label(TonerState s) {
   switch (s) {
     case TonerState::ok:
       return "OK";
     case TonerState::low:
-      return "baixo";
+      return "low";
     case TonerState::empty:
-      return "vazio";
+      return "empty";
     case TonerState::unknown:
     default:
-      return "desconhecido";
+      return "unknown";
   }
 }
 
@@ -189,7 +190,7 @@ PrinterStatus parse_pjl_status(const std::string& text) {
 }
 
 std::string printer_supply_description() {
-  return "Toner preto (TN-2000),Tambor (DR-2000)";
+  return "Black toner (TN-2000),Drum (DR-2000)";
 }
 
 std::string printer_supply_octet(const PrinterStatus& st) {

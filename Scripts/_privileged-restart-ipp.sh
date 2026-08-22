@@ -31,17 +31,17 @@ if ! launchctl bootstrap system "$PLIST_DEST"; then
   launchctl load -w "$PLIST_DEST"
 fi
 launchctl kickstart -k "$LABEL" 2>/dev/null || true
-echo "Daemon recarregado."
+echo "Daemon reloaded."
 launchctl bootout "$STATUS_LABEL" 2>/dev/null || true
 launchctl unload "$STATUS_PLIST_DEST" 2>/dev/null || true
 if ! launchctl bootstrap system "$STATUS_PLIST_DEST"; then
   launchctl load -w "$STATUS_PLIST_DEST"
 fi
 launchctl kickstart -k "$STATUS_LABEL" 2>/dev/null || true
-echo "Daemon de estado recarregado."
+echo "Status daemon reloaded."
 sleep 1
-nc -z localhost 8631 && echo "localhost:8631 a escuta" || echo "AVISO: 8631 ainda fechada"
+nc -z localhost 8631 && echo "localhost:8631 is listening" || echo "WARNING: 8631 still closed"
 # Drop leftover AirPrint PPDs from the Bonjour duplicate; keep the CUPS queue.
 rm -f /etc/cups/ppd/localhost.ppd /etc/cups/ppd/HL_2030.ppd
 launchctl kickstart -k system/org.cups.cupsd 2>/dev/null || true
-echo "cupsd recarregado."
+echo "cupsd reloaded."

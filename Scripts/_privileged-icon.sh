@@ -10,11 +10,11 @@ SRC="$ROOT/docs/sister.png"
 PNG="$DEST/icon.png"
 
 if [[ -z "$ROOT" ]]; then
-  echo "Uso interno: _privileged-icon.sh ROOT" >&2
+  echo "Internal use: _privileged-icon.sh ROOT" >&2
   exit 2
 fi
 if [[ ! -f "$SRC" ]]; then
-  echo "AVISO: sem $SRC; a manter o icone predefinido." >&2
+  echo "WARNING: no $SRC; keeping the default icon." >&2
   exit 0
 fi
 
@@ -50,9 +50,9 @@ if [[ -d /etc/cups/ppd ]]; then
         mkdir -p "$(dirname "$icns")"
         cp "$tmp/sister.icns" "$icns"
         chmod 644 "$icns"
-        echo "Icone CUPS: $icns"
+        echo "CUPS icon: $icns"
       fi
     fi
   done
 fi
-echo "Icone IPP: $PNG"
+echo "IPP icon: $PNG"

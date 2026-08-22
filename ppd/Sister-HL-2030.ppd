@@ -111,8 +111,8 @@
 *Resolution 1200dpi/HQ 1200: "<</HWResolution[1200 1200]/cupsColorSpace 3/cupsBitsPerColor 8>>setpagedevice"
 *CloseUI: *Resolution
 
-*% Toner save is not a checkbox: Rascunho and Normal set ECONOMODE;
-*% Alta (HQ1200) leaves it off.
+*% Toner save is not a checkbox: Draft and Normal set ECONOMODE;
+*% Best (HQ1200) leaves it off.
 
 *DefaultFont: Courier
 *Font Courier: Standard "(002.004S)" Standard ROM

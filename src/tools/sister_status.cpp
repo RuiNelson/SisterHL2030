@@ -89,7 +89,7 @@ bool publish_via_ipp_job(std::string* error) {
                               "  OPERATION Print-Job\n"
                               "  GROUP operation-attributes-tag\n"
                               "  ATTR charset attributes-charset utf-8\n"
-                              "  ATTR naturalLanguage attributes-natural-language pt\n"
+                              "  ATTR naturalLanguage attributes-natural-language en\n"
                               "  ATTR uri printer-uri $uri\n"
                               "  ATTR name requesting-user-name sister-status\n"
                               "  ATTR mimeMediaType document-format image/urf\n"
@@ -129,37 +129,37 @@ bool publish_via_ipp_job(std::string* error) {
 }
 
 void print_human(const sisterhl2030::PrinterStatus& st) {
-  std::printf("Estado PJL: CODE=%d DISPLAY=\"%s\" ONLINE=%s\n", st.code,
+  std::printf("PJL status: CODE=%d DISPLAY=\"%s\" ONLINE=%s\n", st.code,
               st.display.c_str(), st.online ? "TRUE" : "FALSE");
   if (st.have_pagecount) {
-    std::printf("Páginas (contador da máquina): %d\n", st.pagecount);
+    std::printf("Pages (device counter): %d\n", st.pagecount);
   }
-  std::printf("Toner preto (TN-2000): %s",
-              sisterhl2030::toner_state_label_pt(st.toner));
+  std::printf("Black toner (TN-2000): %s",
+              sisterhl2030::toner_state_label(st.toner));
   if (st.toner_percent >= 0) {
     std::printf(" (%d%%)", st.toner_percent);
   }
   std::printf("\n");
-  std::printf("Tambor (DR-2000): ");
+  std::printf("Drum (DR-2000): ");
   if (st.drum_percent >= 0) {
     std::printf("%d%%", st.drum_percent);
     if (st.have_drumlife) {
-      std::printf("  (%d / %d páginas)", st.drumlife, sisterhl2030::kDrumRatedPages);
+      std::printf("  (%d / %d pages)", st.drumlife, sisterhl2030::kDrumRatedPages);
     }
   } else {
-    std::printf("desconhecido");
+    std::printf("unknown");
   }
   std::printf("\n");
 }
 
 void usage() {
   std::fprintf(stderr,
-               "uso: sister-status [--json|--ipp|--publish [--loop]]\n"
-               "  (sem flags)  texto\n"
-               "  --json       uma linha JSON\n"
-               "  --ipp        ATTR:/STATE: para o stderr do ippeveprinter\n"
-               "  --publish    trabalho IPP no-op que actualiza printer-supply\n"
-               "  --loop       com --publish, repetir a cada 180s\n");
+               "usage: sister-status [--json|--ipp|--publish [--loop]]\n"
+               "  (no flags)   plain text\n"
+               "  --json       one JSON line\n"
+               "  --ipp        ATTR:/STATE: on stderr for ippeveprinter\n"
+               "  --publish    no-op IPP job that refreshes printer-supply\n"
+               "  --loop       with --publish, repeat every 180s\n");
 }
 
 }  // namespace
@@ -203,7 +203,7 @@ int main(int argc, char** argv) {
   const bool already_locked = std::getenv("SISTER_USB_LOCKED") != nullptr;
   UsbLock lock(true, already_locked);
   if (lock.busy()) {
-    std::fprintf(stderr, "ERROR: USB da HL-2030 ocupado\n");
+    std::fprintf(stderr, "ERROR: HL-2030 USB is busy\n");
     return 1;
   }
 
@@ -225,7 +225,7 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "sister-status: empty PJL response\n");
       return 0;
     }
-    std::fprintf(stderr, "ERROR: resposta PJL vazia\n");
+    std::fprintf(stderr, "ERROR: empty PJL response\n");
     return 1;
   }
 
@@ -238,7 +238,7 @@ int main(int argc, char** argv) {
           "{\"code\":%d,\"display\":\"%s\",\"pagecount\":%d,\"drumlife\":%d,"
           "\"toner\":\"%s\",\"toner_percent\":%d,\"drum_percent\":%d}\n",
           st.code, st.display.c_str(), st.pagecount, st.drumlife,
-          sisterhl2030::toner_state_label_pt(st.toner), st.toner_percent,
+          sisterhl2030::toner_state_label(st.toner), st.toner_percent,
           st.drum_percent);
       return 0;
     case Mode::ipp:

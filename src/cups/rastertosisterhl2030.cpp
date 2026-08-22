@@ -153,8 +153,8 @@ int pjl_resolution(const cups_page_header2_t& h) {
   return 300;
 }
 
-// Qualidade: draft=300 dpi, normal=600 dpi, high=HQ1200.
-// Rascunho and Normal also set ECONOMODE; Alta (HQ1200) uses full toner.
+// Quality: draft=300 dpi, normal=600 dpi, high=HQ1200.
+// Draft and Normal also set ECONOMODE; Best (HQ1200) uses full toner.
 int requested_resolution(const char* options, const cups_page_header2_t& h) {
   std::string q = upper(option_value(options, "print-quality"));
   if (q.empty()) {

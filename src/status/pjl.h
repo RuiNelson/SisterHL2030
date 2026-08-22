@@ -45,7 +45,7 @@ PrinterStatus parse_pjl_status(const std::string& text);
 
 int drum_remaining_percent(int drumlife);
 
-const char* toner_state_label_pt(TonerState s);
+const char* toner_state_label(TonerState s);
 
 std::string printer_supply_octet(const PrinterStatus& st);
 std::string printer_supply_description();

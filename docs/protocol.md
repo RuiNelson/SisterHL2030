@@ -52,13 +52,13 @@ HQ1200 in the blob is `RAS1200MODE = TRUE` with `RESOLUTION = 600` (and
 a variant that also sets `PAPERFEEDSPEED`). The PPD advertises it as
 `1200x600dpi`.
 
-Sister maps the IPP print dialog **Qualidade** as:
+Sister maps the IPP print dialog **Quality** as:
 
-| Qualidade | PJL |
+| Quality | PJL |
 | --- | --- |
-| Rascunho (`print-quality=draft`) | `RESOLUTION = 300`, `ECONOMODE = ON` |
+| Draft (`print-quality=draft`) | `RESOLUTION = 300`, `ECONOMODE = ON` |
 | Normal | `RESOLUTION = 600`, `ECONOMODE = ON` |
-| Alta (`print-quality=high`) | `RAS1200MODE = TRUE`, `ECONOMODE = OFF` |
+| Best (`print-quality=high`) | `RAS1200MODE = TRUE`, `ECONOMODE = OFF` |
 
 ### Media type (PJL)
 
@@ -191,8 +191,10 @@ Confirmed on `04f9:0027` / serial `B9J561723` / firmware `Ver1.29`:
 | `INFO ID` | `"Brother HL-2030 series:84UZ81:Ver1.29"` |
 | `INFO CONSUMABLE` / `INFO TONER` / `DINQUIRE TONERLOW` | `"?"` (unsupported) |
 
-`CODE=10001` is ready (`DISPLAY="PRONTO"` when language is Portuguese);
-`CODE=40000` is sleep (`INACTIVO`). Toner low is `CODE=10006`. The
+`CODE=10001` is ready, `CODE=40000` is sleep. `DISPLAY` is the front-panel
+string and follows the printer's own language setting, so Sister keys off
+`CODE` and only reads `DISPLAY` as a fallback for codes it does not map.
+Toner low is `CODE=10006`. The
 cartridge sensor is **not** a continuous percentage: Sister maps OK → 100,
 low → 15, empty → 0. Drum remaining is `round(100 × (12000 − DRUMLIFE) /
 12000)` (rated life from the service/user manuals).

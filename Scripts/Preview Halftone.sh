@@ -6,33 +6,33 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_common.sh"
 
 require_macos
-banner "Pré-visualizar halftone (ecrã)"
-echo "Isto NÃO imprime. Abre no Preview uma imagem a preto e branco"
-echo "com a mesma trama Floyd–Steinberg que a HL-2030 usa."
+banner "Preview the halftone (on screen)"
+echo "This does NOT print. It opens a black-and-white image in Preview,"
+echo "screened with the same Floyd–Steinberg dithering the HL-2030 uses."
 echo
-echo "Esquerda = original.  Direita = como deve sair no papel."
+echo "Left = original.  Right = how it should come out on paper."
 echo
 
 cd "$ROOT"
 if [[ ! -x build/sister-preview ]]; then
-  echo "A compilar sister-preview…"
+  echo "Building sister-preview…"
   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
   cmake --build build --target sister-preview -j
 fi
 
 out="$HOME/Desktop/sister-halftone-preview.bmp"
 if [[ $# -ge 1 ]]; then
-  echo "A processar: $1"
+  echo "Processing: $1"
   ./build/sister-preview -o "$out" "$1"
 else
-  echo "Sem ficheiro: a gerar um gráfico de teste (rampas, cinzentos, cores)."
+  echo "No file given: generating a test chart (ramps, grays, colors)."
   ./build/sister-preview --chart -o "$out"
 fi
 
 echo
-echo "Ficheiro: $out"
+echo "File: $out"
 open -a Preview "$out" 2>/dev/null || open "$out"
-echo "Se o lado direito estiver quase todo preto, o algoritmo está invertido."
-echo "Se o lado direito tiver cinzentos em trama de pontos, está correcto"
-echo "e o problema da impressão está no raster que o macOS envia."
+echo "If the right side is almost all black, the algorithm is inverted."
+echo "If the right side shows grays as a dot pattern, it is correct and the"
+echo "printing problem is in the raster macOS sends."
 pause
