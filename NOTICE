@@ -1,0 +1,28 @@
+SisterHL2030
+Copyright (C) 2026 Rui Nelson
+
+This program is free software under the GNU General Public License
+version 2 or later. See LICENSE.
+
+-------------------------------------------------------------------------------
+LinuxDrivers/
+
+The files under LinuxDrivers/ are original Brother Industries artifacts
+kept as a protocol reference (LPR filter, CUPS wrapper sources, and
+i386 ELF binaries). They are not linked into SisterHL2030.
+
+  - cupswrapper / filter / psconvert2 / brcupsconfig sources: GNU GPL v2
+    or later, Copyright (C) 2003–2006 Brother Industries, Ltd.
+  - rawtobr2, libbrcomplpr2.so, brprintconflsr2, braddprinter: proprietary
+    ELF i386 binaries. Used only as a reverse-engineering reference under
+    authorization from Brother. They are not redistributed as part of the
+    compiled driver.
+
+-------------------------------------------------------------------------------
+Protocol documentation
+
+The HL-2030 job format (PJL envelope, PCL language, compression mode
+1030, band layout) was recovered from libbrcomplpr2.so and rawtobr2.
+Peter De Wachter's brlaser (GPL-2+) independently documented the same
+mode-1030 line codec; that published description was used as a
+cross-check. See docs/protocol.md and docs/reverse-engineering.md.

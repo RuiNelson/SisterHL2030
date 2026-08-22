@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.sisterhl2030.printer</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/ippeveprinter</string>
+		<string>-c</string>
+		<string>/Library/Printers/SisterHL2030/filter/sister-ipp-command</string>
+		<string>-d</string>
+		<string>/Library/Printers/SisterHL2030/spool</string>
+		<string>-f</string>
+		<string>image/pwg-raster,image/urf,application/vnd.cups-raster</string>
+		<string>-M</string>
+		<string>Brother</string>
+		<string>-m</string>
+		<string>HL-2030 series</string>
+		<string>-l</string>
+		<string>SisterHL2030</string>
+		<string>-p</string>
+		<string>8631</string>
+		<string>-s</string>
+		<string>18,0</string>
+		<string>-n</string>
+		<string>localhost</string>
+		<string>HL-2030</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/SisterHL2030.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/SisterHL2030.log</string>
+</dict>
+</plist>

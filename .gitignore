@@ -1,0 +1,14 @@
+/build/
+/cmake-build-*/
+/out/
+.DS_Store
+*.o
+*.a
+*.dylib
+compile_commands.json
+.cache/
+.idea/
+.vscode/
+*.user
+CMakeUserPresets.json
+/captures/
