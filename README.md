@@ -30,7 +30,7 @@ send Brother's compressed stream over USB.
 | Native `arm64` raster encoder (mode 1030) | prints on USB HL-2030 |
 | Toner / drum levels via USB PJL | shown in Supply Levels |
 | CLI `sister-rawtobr` (PBM → job stream) | done |
-| PAPPL printer application (IPP Everywhere façade) | next |
+| PAPPL printer application (IPP Everywhere façade) | building; USB device access open |
 | Signed macOS `.pkg` | later |
 
 This is not a port of the 2005 i386 `rawtobr2` binary. That encoder is a

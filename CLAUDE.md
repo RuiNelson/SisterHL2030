@@ -102,6 +102,33 @@ Quality mapping lives in `requested_resolution()` in the filter and
 600 dpi + ECONOMODE ON, high = `RAS1200MODE = TRUE` with `RESOLUTION = 600`
 and ECONOMODE OFF.
 
+## PAPPL application (in progress)
+
+`src/pappl/sister_app.cpp` is the replacement for the ippeveprinter façade:
+PAPPL owns the USB device, the IPP attributes and the web UI, so it retires
+`sister-ipp-command`, `printer-attrs.conf`, `device-uri`, the `usb.lock`
+flock, and the no-op `.sister-status` job. It reuses the encoder unchanged —
+PAPPL pushes raster a line at a time, the app buffers the page (Floyd-Steinberg
+needs the whole page anyway) and calls `Job::encode_page`.
+
+It is **opt-in** and off by default, because it fetches and builds PAPPL:
+
+```bash
+cmake -S . -B build -DSISTER_WITH_PAPPL=ON && cmake --build build -j
+```
+
+Pin notes: PAPPL **1.4.x**, not 2.x — 1.4 wants "CUPS 2.2 or later" and builds
+against the 2.3 macOS ships, while 2.x needs CUPS 2.5+/libcups 3. It is built
+at *configure* time, not build time, so `pkg-config` can report the link line
+(it carries absolute Homebrew paths and `-framework` flags that CMake's list
+handling would split).
+
+Open problem: `sister-printer-app devices` fails with "Unable to get available
+devices". The IOKit `sister-status --publish --loop` daemon holds the same USB
+printer, and the CUPS usb backend runs privileged — so check root and daemon
+contention before anything else. Supplies are not wired up yet; that is the
+next phase, via `papplPrinterSetSupplies()` and `papplPrinterOpenDevice()`.
+
 ## Iterating on an installed system
 
 After changing the encoder, filter, or IPP command script, rebuild then copy
