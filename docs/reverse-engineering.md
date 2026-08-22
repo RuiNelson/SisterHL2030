@@ -86,6 +86,11 @@ from a real HL-2030.
 | CUPS URI | `usb://Brother/HL-2030%20series?serial=B9J561723` |
 | 1284 DeviceID | `MFG:Brother;MDL:HL-2030 series` (from the installed PPD) |
 
+PJL status readback (`INFO STATUS` / `PAGECOUNT` / `DRUMLIFE`) was
+confirmed on the connected HL-2030; see `docs/protocol.md`. The Linux
+encoder blobs do not implement it — that lives in the Windows/macOS
+Status Monitor, not in `rawtobr2`.
+
 The Mac already has Brother's 2014 CUPS package:
 `/Library/Printers/Brother/Filter/rastertobrother2030.bundle` — universal
 **x86_64 + i386**, no arm64. It runs today only via Rosetta (`oahd`).

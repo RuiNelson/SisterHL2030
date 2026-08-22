@@ -7,7 +7,9 @@ export PATH="/usr/sbin:/usr/bin:/bin:/sbin"
 
 ROOT="/Library/Printers/SisterHL2030"
 FILTER="$ROOT/filter/rastertosisterhl2030"
+STATUS="$ROOT/filter/sister-status"
 URI_FILE="$ROOT/device-uri"
+LOCK="$ROOT/usb.lock"
 BACKEND="/usr/libexec/cups/backend/usb"
 
 if [[ ! -x "$FILTER" ]]; then
@@ -53,6 +55,13 @@ if [[ -n "${IPP_PRINTER_RESOLUTION:-}" ]]; then
   append_opt "printer-resolution=${IPP_PRINTER_RESOLUTION}"
 fi
 
+if [[ "${IPP_JOB_NAME:-}" == ".sister-status" ]]; then
+  if [[ -x "$STATUS" ]]; then
+    "$STATUS" --ipp >&2 || true
+  fi
+  exit 0
+fi
+
 echo "INFO: SisterHL2030 encoding ${CONTENT_TYPE:-unknown} -> HL-2030 USB options=${options:-<none>}" >&2
 
 if [[ -n "$job_file" ]]; then
@@ -67,5 +76,12 @@ if [[ ! -s "$tmp" ]]; then
 fi
 
 echo "INFO: sending $(wc -c < "$tmp" | tr -d ' ') bytes to $DEVICE_URI" >&2
+exec 9>"$LOCK"
+flock 9
+export SISTER_USB_LOCKED=1
 "$BACKEND" 1 "${USER:-root}" "${IPP_JOB_NAME:-SisterHL2030}" 1 "" "$tmp"
 echo "INFO: USB backend finished" >&2
+if [[ -x "$STATUS" ]]; then
+  "$STATUS" --ipp >&2 || true
+fi
+flock -u 9

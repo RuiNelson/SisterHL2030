@@ -1,0 +1,85 @@
+// Copyright (C) 2026 Rui Nelson
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+#include "status/pjl.h"
+
+namespace {
+
+int failures = 0;
+
+void expect(bool cond, const char* msg) {
+  if (!cond) {
+    std::fprintf(stderr, "FAIL: %s\n", msg);
+    ++failures;
+  }
+}
+
+}  // namespace
+
+int main() {
+  using sisterhl2030::parse_pjl_status;
+  using sisterhl2030::TonerState;
+
+  const std::string ready =
+      "@PJL INFO STATUS\r\nCODE=10001\r\nDISPLAY=\"PRONTO          \"\r\n"
+      "ONLINE=TRUE\r\n\x0c"
+      "@PJL INFO PAGECOUNT\r\nPAGECOUNT=3616\r\n\x0c"
+      "@PJL INFO DRUMLIFE\r\nDRUMLIFE=3616\r\n\x0c";
+  auto st = parse_pjl_status(ready);
+  expect(st.have_status && st.code == 10001, "ready CODE");
+  expect(st.display == "PRONTO", "trim DISPLAY");
+  expect(st.online, "ONLINE");
+  expect(st.pagecount == 3616 && st.drumlife == 3616, "counters");
+  expect(st.toner == TonerState::ok && st.toner_percent == 100, "toner OK -> 100%");
+  expect(st.drum_percent == 70, "3616/12000 remaining rounds to 70%");
+  expect(!st.toner_low && !st.drum_low, "not low");
+
+  const std::string sleep =
+      "@PJL INFO STATUS\r\nCODE=40000\r\nDISPLAY=\"INACTIVO        \"\r\n"
+      "ONLINE=TRUE\r\n\x0c";
+  st = parse_pjl_status(sleep);
+  expect(st.toner == TonerState::ok, "sleep is not toner empty");
+  expect(st.display == "INACTIVO", "inactive display");
+
+  st = parse_pjl_status("@PJL INFO STATUS\r\nCODE=10006\r\nDISPLAY=\"TONER LOW       \"\r\n\x0c");
+  expect(st.toner == TonerState::low && st.toner_percent == 15 && st.toner_low,
+         "toner low");
+
+  st = parse_pjl_status("@PJL INFO STATUS\r\nCODE=40010\r\nDISPLAY=\"                \"\r\n\x0c");
+  expect(st.toner == TonerState::empty && st.toner_percent == 0 && st.toner_empty,
+         "toner empty");
+
+  st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=10001\r\nDISPLAY=\"PRONTO          \"\r\n\x0c"
+      "@PJL INFO DRUMLIFE\r\nDRUMLIFE=12000\r\n\x0c");
+  expect(st.drum_percent == 0 && st.drum_empty, "drum life end");
+
+  st = parse_pjl_status("@PJL INFO DRUMLIFE\r\nDRUMLIFE=11400\r\n\x0c");
+  expect(st.drum_percent == 5 && st.drum_low, "drum low at 5%");
+
+  const std::string attrs = sisterhl2030::ippeve_attr_lines(parse_pjl_status(ready));
+  expect(attrs.find("type=toner") != std::string::npos, "supply toner");
+  expect(attrs.find("type=opc") != std::string::npos, "supply opc");
+  expect(attrs.find("wasteToner") == std::string::npos, "no fake waste toner");
+  const std::string desc = sisterhl2030::printer_supply_description();
+  expect(desc.find("TN-2000") != std::string::npos, "TN-2000 name");
+  expect(desc.find("DR-2000") != std::string::npos, "DR-2000 name");
+
+  expect(sisterhl2030::serial_from_device_uri(
+             "usb://Brother/HL-2030%20series?serial=B9J561723") == "B9J561723",
+         "serial from URI");
+  expect(sisterhl2030::drum_remaining_percent(0) == 100, "new drum");
+  expect(sisterhl2030::drum_remaining_percent(6000) == 50, "half drum");
+  expect(sisterhl2030::drum_remaining_percent(20000) == 0, "over-life drum");
+
+  if (failures) {
+    std::fprintf(stderr, "%d failure(s)\n", failures);
+    return 1;
+  }
+  std::puts("ok");
+  return 0;
+}

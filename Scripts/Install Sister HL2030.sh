@@ -95,7 +95,7 @@ echo "${c_dim}(demora menos de um minuto na primeira vez)${c_reset}"
 echo
 cd "$ROOT"
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target rastertosisterhl2030 -j
+cmake --build build --target rastertosisterhl2030 sister-status -j
 echo
 if ! file "$ROOT/build/rastertosisterhl2030" | grep -q 'arm64\|x86_64\|executable'; then
   die "A compilação não produziu o filtro. Vê as mensagens acima."
@@ -188,6 +188,11 @@ echo "Modos no diálogo de impressão, em ${c_bold}Qualidade${c_reset}:"
 echo "  • Rascunho — 300 dpi, com poupança de toner"
 echo "  • Normal   — 600 dpi, com poupança de toner (predefinição)"
 echo "  • Alta     — HQ1200, toner cheio (o modo fino da Brother)"
+echo
+echo "Níveis de consumíveis: Definições do Sistema → Impressoras e Scanners"
+echo "→ Brother HL-2030 series → Opções e consumíveis → Níveis de consumíveis."
+echo "O toner da HL-2030 só reporta OK / baixo / vazio (não é percentagem"
+echo "contínua). O tambor é estimado pelas páginas (cerca de 12 000)."
 echo
 echo "Se a página sair em branco ou invertida, abre um problema no"
 echo "repositório SisterHL2030 e descreve o que viste."

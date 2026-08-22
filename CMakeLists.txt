@@ -32,14 +32,40 @@ target_compile_options(rastertosisterhl2030 PRIVATE
   $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
 )
 
+add_library(sisterhl2030_status src/status/pjl.cc)
+target_include_directories(sisterhl2030_status PUBLIC src)
+target_compile_options(sisterhl2030_status PRIVATE
+  $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
+)
+
+if(APPLE)
+  add_executable(sister-status
+    src/tools/sister_status.cpp
+    src/status/usb_printer.cc
+  )
+  target_include_directories(sister-status PRIVATE src)
+  target_link_libraries(sister-status PRIVATE sisterhl2030_status
+    "-framework IOKit" "-framework CoreFoundation")
+  target_compile_options(sister-status PRIVATE
+    $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
+  )
+endif()
+
 add_executable(test_encoder tests/test_encoder.cpp)
 target_link_libraries(test_encoder PRIVATE sisterhl2030_encoder)
 
+add_executable(test_status tests/test_status.cpp)
+target_link_libraries(test_status PRIVATE sisterhl2030_status)
+
 enable_testing()
 add_test(NAME encoder COMMAND test_encoder)
+add_test(NAME status COMMAND test_status)
 
 set(SISTER_INSTALL_FILTERDIR "/Library/Printers/SisterHL2030/filter")
 set(SISTER_INSTALL_PPDDIR "/Library/Printers/PPDs/Contents/Resources")
 install(TARGETS rastertosisterhl2030 RUNTIME DESTINATION ${SISTER_INSTALL_FILTERDIR})
+if(APPLE)
+  install(TARGETS sister-status RUNTIME DESTINATION ${SISTER_INSTALL_FILTERDIR})
+endif()
 install(FILES ppd/Sister-HL-2030.ppd DESTINATION ${SISTER_INSTALL_PPDDIR}
         RENAME "Sister HL-2030.ppd")

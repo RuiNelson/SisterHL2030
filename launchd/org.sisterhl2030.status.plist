@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.sisterhl2030.status</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/Printers/SisterHL2030/filter/sister-status</string>
+		<string>--publish</string>
+		<string>--loop</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/SisterHL2030.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/SisterHL2030.log</string>
+</dict>
+</plist>

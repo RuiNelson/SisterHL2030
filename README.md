@@ -7,6 +7,20 @@ The HL-2030 is a host-based laser: it does not speak PostScript, PCL 5 as a
 full PDL, AirPrint, or IPP Everywhere. The host must rasterize the page and
 send Brother's compressed stream over USB.
 
+## Features
+
+* Apple Silicon support
+* When printing a page, it will default to 100% scale
+* Floyd-Steinberg half-toning algorithm
+* AirPrint support and network sharing support
+* Consumable levels reporting
+
+## Quality Modes
+
+* **Draft** — 300dpi, toner saving mode
+* **Normal** — 600dpi, toner saving mode
+* **Fine** — 1200dpi
+
 ## Status
 
 | Piece | State |
@@ -14,6 +28,7 @@ send Brother's compressed stream over USB.
 | Protocol recovered from Linux i386 blobs | done |
 | Envelope confirmed vs official macOS `rastertobrother2030` | done |
 | Native `arm64` raster encoder (mode 1030) | prints on USB HL-2030 |
+| Toner / drum levels via USB PJL | shown in Níveis de consumíveis |
 | CLI `sister-rawtobr` (PBM → job stream) | done |
 | PAPPL printer application (IPP Everywhere façade) | next |
 | Signed macOS `.pkg` | later |

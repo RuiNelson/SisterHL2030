@@ -164,3 +164,40 @@ the line is empty.
 - Duplex (`ESC & l 2 S`). The HL-2030 PPD has no duplex UI.
 - PCL unit-of-measure / extra margin commands. The blob can emit them;
   the 1030 path used by `rawtobr2` does not require them for a basic page.
+
+## Status readback (consumables)
+
+The HL-2030 USB interface is printer-class **bidirectional** (class 7,
+subclass 1, protocol 2): bulk OUT `0x01`, bulk IN `0x82`. IEEE 1284
+device ID is `MFG:Brother;CMD:PJL,HBP;MDL:HL-2030 series;CLS:PRINTER;`.
+
+`sister-status` sends one PJL transaction and reads until form-feed:
+
+```
+ESC %-12345X@PJL CR LF
+@PJL INFO STATUS CR LF
+@PJL INFO PAGECOUNT CR LF
+@PJL INFO DRUMLIFE CR LF
+ESC %-12345X
+```
+
+Confirmed on `04f9:0027` / serial `B9J561723` / firmware `Ver1.29`:
+
+| Command | Response |
+| --- | --- |
+| `INFO STATUS` | `CODE=…` `DISPLAY="…"` `ONLINE=TRUE` |
+| `INFO PAGECOUNT` | `PAGECOUNT=` total pages |
+| `INFO DRUMLIFE` | `DRUMLIFE=` pages on the current drum |
+| `INFO ID` | `"Brother HL-2030 series:84UZ81:Ver1.29"` |
+| `INFO CONSUMABLE` / `INFO TONER` / `DINQUIRE TONERLOW` | `"?"` (unsupported) |
+
+`CODE=10001` is ready (`DISPLAY="PRONTO"` when language is Portuguese);
+`CODE=40000` is sleep (`INACTIVO`). Toner low is `CODE=10006`. The
+cartridge sensor is **not** a continuous percentage: Sister maps OK → 100,
+low → 15, empty → 0. Drum remaining is `round(100 × (12000 − DRUMLIFE) /
+12000)` (rated life from the service/user manuals).
+
+Levels are published as IPP `printer-supply` (toner + OPC). Apple's
+`ippeveprinter` hard-codes a waste-toner + toner pair on its `/supplies`
+form, so Sister sets the real octetString via `ATTR:` on the print command
+(and on a no-op job named `.sister-status` every 3 minutes).
