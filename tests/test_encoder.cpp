@@ -285,6 +285,30 @@ int main() {
     }
   }
 
+  // A flat mid-grey must come out as a dot pattern, never a solid block.
+  // Regression guard: when the PAPPL app was handed the red channel instead
+  // of luma, saturated colour collapsed to pure black/white, and this is what
+  // that failure looks like by the time it reaches the packing stage.
+  {
+    const unsigned w = 64, h = 64;
+    const uint8_t mid = sisterhl2030::rgb_to_toner(128, 128, 128);
+    expect(mid != 0 && mid != 255, "mid-grey maps to a mid toner value");
+
+    std::vector<uint8_t> toner(static_cast<size_t>(w) * h, mid);
+    sisterhl2030::floyd_steinberg(toner.data(), w, h);
+
+    std::vector<uint8_t> packed((w + 7) / 8);
+    unsigned mixed = 0;
+    for (unsigned y = 0; y < h; ++y) {
+      sisterhl2030::pack_toner_row(toner.data() + static_cast<size_t>(y) * w, w,
+                                   packed.data());
+      for (uint8_t b : packed) {
+        if (b != 0x00 && b != 0xFF) ++mixed;
+      }
+    }
+    expect(mixed > 0, "mid-grey dithers instead of going solid");
+  }
+
   if (failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return 1;

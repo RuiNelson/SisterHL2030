@@ -37,6 +37,7 @@ struct JobState {
   std::vector<uint8_t> toner;  // width*height, 0 = paper white, 255 = black
   unsigned width = 0;
   unsigned height = 0;
+  unsigned lines_seen = 0;
 };
 
 // Adapt the PAPPL device to the FILE* the encoder writes to.
@@ -162,6 +163,12 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
   state->params.mediatype = pjl_mediatype(options->media.type);
 
   // 0 = paper white; rwriteline fills in the real toner values.
+  state->lines_seen = 0;
+  papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+              "Raster page %ux%u, %u bytes/line, %u bits/pixel.",
+              options->header.cupsWidth, options->header.cupsHeight,
+              options->header.cupsBytesPerLine,
+              options->header.cupsBitsPerPixel);
   state->toner.assign(static_cast<size_t>(state->width) * state->height, 0);
   return true;
 }
@@ -173,10 +180,24 @@ bool rwriteline(pappl_job_t* job, pappl_pr_options_t* options,
   auto* state = static_cast<JobState*>(papplJobGetData(job));
   if (!state || y >= state->height) return true;
 
+  ++state->lines_seen;
   uint8_t* row = state->toner.data() + static_cast<size_t>(y) * state->width;
-  for (unsigned x = 0; x < state->width; ++x) {
-    row[x] = sisterhl2030::device_gray_to_toner(line[x]);
+
+  // PAPPL 1.4 never converts RGB to grey: for an 8-bit grey raster it copies
+  // bytes straight out of its 3-byte RGB buffer, so "grey" is really the red
+  // channel and any saturated colour collapses to black or white. Ask for
+  // sRGB instead and do the luma ourselves.
+  if (options->header.cupsBitsPerPixel >= 24) {
+    for (unsigned x = 0; x < state->width; ++x) {
+      const unsigned char* px = line + static_cast<size_t>(x) * 3;
+      row[x] = sisterhl2030::rgb_to_toner(px[0], px[1], px[2]);
+    }
+  } else {
+    for (unsigned x = 0; x < state->width; ++x) {
+      row[x] = sisterhl2030::device_gray_to_toner(line[x]);
+    }
   }
+
   return true;
 }
 
@@ -195,6 +216,23 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
       options->printer_resolution[0] >= 450) {
     sisterhl2030::box_downsample_2x(state->toner, width, height);
   }
+
+  // How much tone did we actually receive? If PAPPL already reduced the page
+  // to black and white there is nothing for error diffusion to spread.
+  size_t midtones = 0;
+  for (uint8_t v : state->toner) {
+    if (v != 0 && v != 255) ++midtones;
+  }
+  // papplLogJob implements its own printf subset -- %zu is not in it and
+  // crashes the server, so keep every conversion to %d/%u/%s.
+  papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+              "Page %ux%u: %u of %u samples are mid-tone (%s).", width, height,
+              static_cast<unsigned>(midtones),
+              static_cast<unsigned>(state->toner.size()),
+              midtones ? "dithering" : "already 1-bit");
+  papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+              "Received %u of %u raster lines.", state->lines_seen,
+              height);
 
   sisterhl2030::floyd_steinberg(state->toner.data(), width, height);
 
@@ -277,12 +315,16 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
 
   // Always take 8-bit gray and dither it ourselves: Floyd-Steinberg here
   // beats handing the printer a pre-thresholded bitmap.
-  driver_data->raster_types =
-      PAPPL_PWG_RASTER_TYPE_BLACK_1 | PAPPL_PWG_RASTER_TYPE_SGRAY_8;
-  driver_data->force_raster_type = PAPPL_PWG_RASTER_TYPE_SGRAY_8;
+  driver_data->raster_types = PAPPL_PWG_RASTER_TYPE_BLACK_1 |
+                              PAPPL_PWG_RASTER_TYPE_SGRAY_8 |
+                              PAPPL_PWG_RASTER_TYPE_SRGB_8;
 
-  driver_data->color_supported = PAPPL_COLOR_MODE_MONOCHROME;
-  driver_data->color_default = PAPPL_COLOR_MODE_MONOCHROME;
+  // The printer is mono, but PAPPL only hands over sRGB when the colour mode
+  // is "color" -- and sRGB is the only form in which colour survives the trip
+  // intact. We reduce it to toner ourselves, so the paper is still mono.
+  driver_data->color_supported =
+      PAPPL_COLOR_MODE_COLOR | PAPPL_COLOR_MODE_MONOCHROME;
+  driver_data->color_default = PAPPL_COLOR_MODE_COLOR;
   driver_data->sides_supported = PAPPL_SIDES_ONE_SIDED;
   driver_data->sides_default = PAPPL_SIDES_ONE_SIDED;
   driver_data->orient_default = IPP_ORIENT_NONE;

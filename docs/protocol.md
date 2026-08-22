@@ -157,6 +157,13 @@ byte `extra`. Otherwise emit `extra / 255` bytes of `0xFF` followed by
 `SendData_1030` emits a single `0xFF` line when the compressor reports
 the line is empty.
 
+## Checking a job without printing
+
+`Scripts/decode_job.py` reverses everything above — bands, delta lines,
+substitute and repeat edits — back into a PBM, and round-trips
+`sister-rawtobr` output byte-for-byte. Use it to confirm halftoning survived
+the encoder instead of spending paper on it.
+
 ## What we do not emit (v1)
 
 - HBP language (`@PJL ENTER LANGUAGE = HBP` and `@F`/`@X`/`@L`/`@S`/`@J`

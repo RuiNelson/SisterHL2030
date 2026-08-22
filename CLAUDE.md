@@ -133,8 +133,35 @@ names must start with a letter or underscore", whatever the real cause. The
 server log carries the true reason — read it first. Declaring a raw `format`
 without a `printfile_cb` fails exactly this way.
 
+**Always take sRGB from PAPPL, never its 8-bit grey.** PAPPL 1.4 has no
+RGB-to-grey conversion anywhere (`grep rgb_to_gray` finds nothing); for an
+8-bit grey raster it copies `bpp` bytes straight out of its 3-byte RGB buffer,
+so "grey" is really the **red channel**. A saturated image then arrives already
+black and white and there is nothing left to halftone. The driver therefore
+advertises `srgb_8` and defaults `print-color-mode` to `color` — PAPPL only
+emits sRGB in that mode — and `rwriteline()` does the luma itself via
+`rgb_to_toner()`. The paper is still mono.
+
 Supplies are not wired up yet; that is the next phase, via
 `papplPrinterSetSupplies()` and `papplPrinterOpenDevice()`.
+
+## Checking output without printing
+
+`Scripts/decode_job.py` decodes a mode-1030 job back into a bitmap, so you can
+see what would land on paper without spending any. It round-trips
+`sister-rawtobr` output exactly, so its results are trustworthy.
+
+```bash
+./build/sister-rawtobr < page.pbm > job.prn
+python3 Scripts/decode_job.py job.prn out.pbm
+```
+
+`mixed bytes` is the halftone signal: packed bytes that are neither `0x00` nor
+`0xFF`. A dithered photo runs ~90%; a page that lost its tone is near 0%.
+
+To capture a whole PAPPL job without a printer, point a printer at a socket
+(`-v socket://127.0.0.1:9100`) and listen on that port — the `file://` scheme
+is rejected by the server's device-type check, so socket is the way in.
 
 ## Iterating on an installed system
 
