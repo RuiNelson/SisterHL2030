@@ -55,6 +55,7 @@ set +e
     echo "AVISO: sem URI USB; o comando IPP nao consegue falar com a impressora ate la rescreveres $DEST/device-uri"
   fi
   chmod 644 "$DEST/device-uri" 2>/dev/null || true
+  rm -f "$DEST/toner-save"
 
   # Printer Application, not a PPD. Remove any leftover classic PPD we used
   # in earlier SisterHL2030 installs so CUPS cannot pick it by accident.

@@ -33,7 +33,7 @@ not use it).
 ESC %-12345X@PJL LF
 @PJL SET RAS1200MODE = OFF LF            # TRUE for HQ1200 (macOS uses OFF, not FALSE)
 @PJL SET RESOLUTION = 600 LF             # 300 or 600; HQ1200 still sets 600
-@PJL SET ECONOMODE = OFF LF              # ON = toner save
+@PJL SET ECONOMODE = OFF LF              # ON = toner save (draft + normal)
 @PJL SET MEDIATYPE = REGULAR LF          # see table
 @PJL SET ORIENTATION = PORTRAIT LF
 @PJL SET PAPER = A4 LF                   # LETTER, A4, …
@@ -51,6 +51,14 @@ FF                                       # form feed (0x0c)
 HQ1200 in the blob is `RAS1200MODE = TRUE` with `RESOLUTION = 600` (and
 a variant that also sets `PAPERFEEDSPEED`). The PPD advertises it as
 `1200x600dpi`.
+
+Sister maps the IPP print dialog **Qualidade** as:
+
+| Qualidade | PJL |
+| --- | --- |
+| Rascunho (`print-quality=draft`) | `RESOLUTION = 300`, `ECONOMODE = ON` |
+| Normal | `RESOLUTION = 600`, `ECONOMODE = ON` |
+| Alta (`print-quality=high`) | `RAS1200MODE = TRUE`, `ECONOMODE = OFF` |
 
 ### Media type (PJL)
 

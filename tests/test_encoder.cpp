@@ -116,6 +116,14 @@ int main() {
     expect(device_k_to_toner(0) == 0, "DeviceK 0 is white");
     expect(device_k_to_toner(255) == 255, "DeviceK 255 is black");
     expect(rgb_to_toner(255, 255, 0) < 80, "yellow is light, not solid black");
+    {
+      unsigned w = 4;
+      unsigned h = 4;
+      std::vector<uint8_t> block(16, 100);
+      sisterhl2030::box_downsample_2x(block, w, h);
+      expect(w == 2 && h == 2, "2x2 downsample halves both axes");
+      expect(block.size() == 4 && block[0] == 100, "2x2 box of 100 stays 100");
+    }
   }
 
   // White line compresses to a single 0xFF.
@@ -165,6 +173,7 @@ int main() {
     expect(contains(bytes, "\033%-12345X@PJL\n"), "UEL + PJL");
     expect(contains(bytes, "@PJL SET RAS1200MODE = OFF\n"), "ras1200 off");
     expect(contains(bytes, "@PJL SET RESOLUTION = 600\n"), "resolution");
+    expect(contains(bytes, "@PJL SET ECONOMODE = OFF\n"), "economode off by default");
     expect(contains(bytes, "@PJL SET MEDIATYPE = REGULAR\n"), "media");
     expect(contains(bytes, "@PJL ENTER LANGUAGE = PCL\n"), "enter PCL");
     expect(contains(bytes, "\033&l1h1001H"), "tray command");
@@ -178,6 +187,102 @@ int main() {
     expect(std::find(bytes.begin(), bytes.end(), static_cast<uint8_t>(0xFF)) !=
                bytes.end(),
            "white-line 0xFF in stream");
+  }
+
+  {
+    char econo_tmpl[] = "/tmp/sisterhl2030-econo-XXXXXX";
+    const int efd = mkstemp(econo_tmpl);
+    expect(efd >= 0, "mkstemp economode");
+    FILE* ef = efd >= 0 ? fdopen(efd, "w+b") : nullptr;
+    expect(ef != nullptr, "fdopen economode");
+    if (ef) {
+      int row = 0;
+      auto next = [&](std::vector<uint8_t>& buf) {
+        if (row >= 2) {
+          return false;
+        }
+        std::fill(buf.begin(), buf.end(), 0);
+        ++row;
+        return true;
+      };
+      {
+        Job job(ef, "econo");
+        PageParams p;
+        p.economode = true;
+        job.encode_page(p, 2, 8, next);
+      }
+      const auto bytes = slurp(ef);
+      std::fclose(ef);
+      std::remove(econo_tmpl);
+      expect(contains(bytes, "@PJL SET ECONOMODE = ON\n"),
+             "economode on sets PJL ECONOMODE");
+      expect(!contains(bytes, "@PJL SET ECONOMODE = OFF\n"),
+             "economode on does not also emit OFF");
+    }
+  }
+
+  {
+    char hq_tmpl[] = "/tmp/sisterhl2030-hq-XXXXXX";
+    const int hfd = mkstemp(hq_tmpl);
+    expect(hfd >= 0, "mkstemp hq1200");
+    FILE* hf = hfd >= 0 ? fdopen(hfd, "w+b") : nullptr;
+    expect(hf != nullptr, "fdopen hq1200");
+    if (hf) {
+      int row = 0;
+      auto next = [&](std::vector<uint8_t>& buf) {
+        if (row >= 2) {
+          return false;
+        }
+        std::fill(buf.begin(), buf.end(), 0);
+        ++row;
+        return true;
+      };
+      {
+        Job job(hf, "hq");
+        PageParams p;
+        p.resolution = 1200;
+        job.encode_page(p, 2, 8, next);
+      }
+      const auto bytes = slurp(hf);
+      std::fclose(hf);
+      std::remove(hq_tmpl);
+      expect(contains(bytes, "@PJL SET RAS1200MODE = TRUE\n"),
+             "HQ1200 sets RAS1200MODE TRUE");
+      expect(contains(bytes, "@PJL SET RESOLUTION = 600\n"),
+             "HQ1200 still sets RESOLUTION 600");
+    }
+  }
+
+  {
+    char d_tmpl[] = "/tmp/sisterhl2030-draft-XXXXXX";
+    const int dfd = mkstemp(d_tmpl);
+    expect(dfd >= 0, "mkstemp draft");
+    FILE* df = dfd >= 0 ? fdopen(dfd, "w+b") : nullptr;
+    expect(df != nullptr, "fdopen draft");
+    if (df) {
+      int row = 0;
+      auto next = [&](std::vector<uint8_t>& buf) {
+        if (row >= 2) {
+          return false;
+        }
+        std::fill(buf.begin(), buf.end(), 0);
+        ++row;
+        return true;
+      };
+      {
+        Job job(df, "draft");
+        PageParams p;
+        p.resolution = 300;
+        job.encode_page(p, 2, 8, next);
+      }
+      const auto bytes = slurp(df);
+      std::fclose(df);
+      std::remove(d_tmpl);
+      expect(contains(bytes, "@PJL SET RAS1200MODE = OFF\n"),
+             "300 dpi leaves RAS1200 off");
+      expect(contains(bytes, "@PJL SET RESOLUTION = 300\n"),
+             "draft sets RESOLUTION 300");
+    }
   }
 
   if (failures != 0) {

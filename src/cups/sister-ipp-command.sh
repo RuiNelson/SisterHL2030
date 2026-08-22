@@ -31,11 +31,29 @@ tmp="$(mktemp -t sisterhl2030-job)"
 trap 'rm -f "$tmp"' EXIT
 
 options=""
+append_opt() {
+  local kv="$1"
+  if [[ -n "$options" ]]; then
+    options+=" ${kv}"
+  else
+    options="${kv}"
+  fi
+}
+
 if [[ -n "${IPP_MEDIA:-}" ]]; then
-  options="media=${IPP_MEDIA}"
+  append_opt "media=${IPP_MEDIA}"
+fi
+if [[ -n "${IPP_MEDIA_TYPE:-}" ]]; then
+  append_opt "media-type=${IPP_MEDIA_TYPE}"
+fi
+if [[ -n "${IPP_PRINT_QUALITY:-}" ]]; then
+  append_opt "print-quality=${IPP_PRINT_QUALITY}"
+fi
+if [[ -n "${IPP_PRINTER_RESOLUTION:-}" ]]; then
+  append_opt "printer-resolution=${IPP_PRINTER_RESOLUTION}"
 fi
 
-echo "INFO: SisterHL2030 encoding ${CONTENT_TYPE:-unknown} -> HL-2030 USB" >&2
+echo "INFO: SisterHL2030 encoding ${CONTENT_TYPE:-unknown} -> HL-2030 USB options=${options:-<none>}" >&2
 
 if [[ -n "$job_file" ]]; then
   "$FILTER" 1 "${USER:-root}" "${IPP_JOB_NAME:-SisterHL2030}" 1 "$options" "$job_file" >"$tmp"

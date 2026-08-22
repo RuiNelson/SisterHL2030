@@ -5,6 +5,7 @@
 #define SISTERHL2030_HALFTONE_H
 
 #include <cstdint>
+#include <vector>
 
 namespace sisterhl2030 {
 
@@ -24,6 +25,11 @@ uint8_t device_gray_to_toner(uint8_t gray);
 
 // DeviceK (0 = white, 255 = black) → toner.
 uint8_t device_k_to_toner(uint8_t k);
+
+// Halve width and height with a 2×2 box filter (draft 600→300). No-op if
+// either dimension is < 2. `toner` is resized to the new width*height.
+void box_downsample_2x(std::vector<uint8_t>& toner, unsigned& width,
+                       unsigned& height);
 
 }  // namespace sisterhl2030
 

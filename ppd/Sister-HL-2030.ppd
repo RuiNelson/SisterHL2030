@@ -110,12 +110,8 @@
 *Resolution 1200dpi/HQ 1200: "<</HWResolution[1200 1200]/cupsColorSpace 3/cupsBitsPerColor 8>>setpagedevice"
 *CloseUI: *Resolution
 
-*OpenUI *TonerSaveMode/Toner Save: PickOne
-*OrderDependency: 10 AnySetup *TonerSaveMode
-*DefaultTonerSaveMode: Off
-*TonerSaveMode Off/Off: ""
-*TonerSaveMode On/On: ""
-*CloseUI: *TonerSaveMode
+*% Toner save is not a checkbox: Rascunho and Normal set ECONOMODE;
+*% Alta (HQ1200) leaves it off.
 
 *DefaultFont: Courier
 *Font Courier: Standard "(002.004S)" Standard ROM

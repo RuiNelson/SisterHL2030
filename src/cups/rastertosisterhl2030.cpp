@@ -32,18 +32,31 @@ std::string upper(std::string s) {
   return s;
 }
 
-bool option_is_on(const char* options, const char* key) {
-  if (!options || !key) {
-    return false;
+// Value of `key=` in a CUPS option string. Keys match as whole tokens
+// so `media` does not steal `media-type`.
+std::string option_value(const char* options, const char* key) {
+  if (!options || !key || !*key) {
+    return {};
   }
-  const std::string pat = std::string(key) + "=";
-  const char* p = std::strstr(options, pat.c_str());
-  if (!p) {
-    return false;
+  const size_t klen = std::strlen(key);
+  const char* p = options;
+  while (*p) {
+    while (*p == ' ' || *p == '\t') {
+      ++p;
+    }
+    if (std::strncmp(p, key, klen) == 0 && p[klen] == '=') {
+      p += klen + 1;
+      const char* end = p;
+      while (*end && *end != ' ' && *end != '\t') {
+        ++end;
+      }
+      return std::string(p, static_cast<size_t>(end - p));
+    }
+    while (*p && *p != ' ' && *p != '\t') {
+      ++p;
+    }
   }
-  p += pat.size();
-  return std::strncmp(p, "On", 2) == 0 || std::strncmp(p, "true", 4) == 0 ||
-         std::strncmp(p, "TRUE", 4) == 0;
+  return {};
 }
 
 std::string pjl_media(const char* media_type, unsigned cups_media) {
@@ -138,6 +151,45 @@ int pjl_resolution(const cups_page_header2_t& h) {
     return 600;
   }
   return 300;
+}
+
+// Qualidade: draft=300 dpi, normal=600 dpi, high=HQ1200.
+// Rascunho and Normal also set ECONOMODE; Alta (HQ1200) uses full toner.
+int requested_resolution(const char* options, const cups_page_header2_t& h) {
+  std::string q = upper(option_value(options, "print-quality"));
+  if (q.empty()) {
+    q = upper(option_value(options, "cupsPrintQuality"));
+  }
+  if (q == "DRAFT" || q == "3") {
+    return 300;
+  }
+  if (q == "HIGH" || q == "5" || q == "BEST") {
+    return 1200;
+  }
+  if (q == "NORMAL" || q == "4") {
+    return 600;
+  }
+  const std::string pr = option_value(options, "printer-resolution");
+  if (pr.find("1200") != std::string::npos) {
+    return 1200;
+  }
+  if (pr.find("300") != std::string::npos) {
+    return 300;
+  }
+  if (pr.find("600") != std::string::npos) {
+    return 600;
+  }
+  return pjl_resolution(h);
+}
+
+const char* mode_name(int dpi) {
+  if (dpi >= 900) {
+    return "HQ1200";
+  }
+  if (dpi >= 450) {
+    return "600dpi";
+  }
+  return "300dpi";
 }
 
 uint8_t sample8(const unsigned char* p, int bpc) {
@@ -240,28 +292,35 @@ int main(int argc, char* argv[]) {
     }
 
     sisterhl2030::PageParams params;
-    params.resolution = pjl_resolution(header);
+    params.resolution = requested_resolution(options, header);
     params.copies = static_cast<int>(std::max(1u, header.NumCopies));
-    params.economode = option_is_on(options, "TonerSaveMode");
+    params.economode = params.resolution < 900;
     params.papersize = pjl_paper(header);
     params.mediatype = pjl_media(header.MediaType, header.cupsMediaType);
 
     const bool already_1bit =
         header.cupsBitsPerPixel == 1 && header.cupsNumColors <= 1;
+    const bool down_to_300 =
+        params.resolution == 300 && pjl_resolution(header) >= 450;
     std::fprintf(stderr,
-                 "INFO: page %ux%u %ubit/%u colorspace=%u 1bit=%s\n",
+                 "INFO: page %ux%u %ubit/%u colorspace=%u 1bit=%s "
+                 "mode=%s ECONOMODE=%s\n",
                  header.cupsWidth, header.cupsHeight, header.cupsBitsPerPixel,
                  header.cupsNumColors, header.cupsColorSpace,
-                 already_1bit ? "passthrough" : "Floyd-Steinberg");
+                 already_1bit ? "passthrough" : "Floyd-Steinberg",
+                 mode_name(params.resolution),
+                 params.economode ? "ON" : "OFF");
 
     raw_line.resize(header.cupsBytesPerLine);
-    packed.resize((header.cupsWidth + 7) / 8);
 
+    unsigned out_w = header.cupsWidth;
+    unsigned out_h = header.cupsHeight;
     std::vector<uint8_t> page_bits;
-    if (already_1bit) {
-      page_bits.resize(static_cast<size_t>(header.cupsBytesPerLine) *
-                       header.cupsHeight);
-      for (unsigned y = 0; y < header.cupsHeight; ++y) {
+
+    if (already_1bit && !down_to_300) {
+      packed.resize((out_w + 7) / 8);
+      page_bits.resize(packed.size() * out_h);
+      for (unsigned y = 0; y < out_h; ++y) {
         if (cupsRasterReadPixels(ras, raw_line.data(), header.cupsBytesPerLine) !=
             header.cupsBytesPerLine) {
           std::fprintf(stderr, "ERROR: short raster read\n");
@@ -273,8 +332,7 @@ int main(int argc, char* argv[]) {
                     packed.data(), packed.size());
       }
     } else {
-      std::vector<uint8_t> toner(static_cast<size_t>(header.cupsWidth) *
-                                 header.cupsHeight);
+      std::vector<uint8_t> toner(static_cast<size_t>(out_w) * out_h);
       std::vector<uint8_t> row_toner;
       long toner_sum = 0;
       for (unsigned y = 0; y < header.cupsHeight; ++y) {
@@ -284,24 +342,50 @@ int main(int argc, char* argv[]) {
           cupsRasterClose(ras);
           return 1;
         }
-        row_to_toner(header, raw_line.data(), row_toner);
-        std::memcpy(toner.data() + static_cast<size_t>(y) * header.cupsWidth,
-                    row_toner.data(), header.cupsWidth);
-        for (uint8_t t : row_toner) {
-          toner_sum += t;
+        if (already_1bit) {
+          packed.resize((header.cupsWidth + 7) / 8);
+          pack_1bit_row(header, raw_line.data(), packed);
+          for (unsigned x = 0; x < header.cupsWidth; ++x) {
+            const bool on =
+                (packed[x / 8] & static_cast<uint8_t>(0x80 >> (x % 8))) != 0;
+            toner[static_cast<size_t>(y) * header.cupsWidth + x] =
+                on ? 255 : 0;
+          }
+        } else {
+          row_to_toner(header, raw_line.data(), row_toner);
+          std::memcpy(toner.data() + static_cast<size_t>(y) * header.cupsWidth,
+                      row_toner.data(), header.cupsWidth);
+          for (uint8_t t : row_toner) {
+            toner_sum += t;
+          }
         }
       }
-      const double mean =
-          static_cast<double>(toner_sum) /
-          (static_cast<double>(header.cupsWidth) * header.cupsHeight);
-      std::fprintf(stderr, "INFO: mean toner before dither %.1f / 255\n", mean);
-      sisterhl2030::floyd_steinberg(toner.data(), header.cupsWidth,
-                                    header.cupsHeight);
-      page_bits.resize(packed.size() * header.cupsHeight);
-      for (unsigned y = 0; y < header.cupsHeight; ++y) {
+      if (down_to_300) {
+        sisterhl2030::box_downsample_2x(toner, out_w, out_h);
+        std::fprintf(stderr, "INFO: draft downsample to %ux%u (300 dpi)\n",
+                     out_w, out_h);
+      }
+      if (!already_1bit || down_to_300) {
+        if (!already_1bit) {
+          const double mean =
+              static_cast<double>(toner_sum) /
+              (static_cast<double>(header.cupsWidth) * header.cupsHeight);
+          std::fprintf(stderr, "INFO: mean toner before dither %.1f / 255\n",
+                       mean);
+          sisterhl2030::floyd_steinberg(toner.data(), out_w, out_h);
+        } else {
+          // 1-bit draft: 2×2 box already produced 0..255; re-threshold.
+          for (uint8_t& t : toner) {
+            t = t >= 128 ? 255 : 0;
+          }
+        }
+      }
+      packed.resize((out_w + 7) / 8);
+      page_bits.resize(packed.size() * out_h);
+      for (unsigned y = 0; y < out_h; ++y) {
         sisterhl2030::pack_toner_row(
-            toner.data() + static_cast<size_t>(y) * header.cupsWidth,
-            header.cupsWidth, packed.data());
+            toner.data() + static_cast<size_t>(y) * out_w, out_w,
+            packed.data());
         std::memcpy(page_bits.data() + static_cast<size_t>(y) * packed.size(),
                     packed.data(), packed.size());
       }
@@ -309,7 +393,7 @@ int main(int argc, char* argv[]) {
 
     unsigned row = 0;
     auto next_line = [&](std::vector<uint8_t>& buf) {
-      if (row >= header.cupsHeight) {
+      if (row >= out_h) {
         return false;
       }
       buf.assign(page_bits.data() + static_cast<size_t>(row) * packed.size(),
@@ -318,7 +402,7 @@ int main(int argc, char* argv[]) {
       return true;
     };
 
-    job.encode_page(params, static_cast<int>(header.cupsHeight),
+    job.encode_page(params, static_cast<int>(out_h),
                     static_cast<int>(packed.size()), next_line);
     std::fprintf(stderr, "PAGE: %d %u\n", job.pages(), header.NumCopies);
   }

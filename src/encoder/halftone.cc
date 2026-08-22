@@ -61,6 +61,30 @@ void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed) {
   }
 }
 
+void box_downsample_2x(std::vector<uint8_t>& toner, unsigned& width,
+                       unsigned& height) {
+  if (width < 2 || height < 2) {
+    return;
+  }
+  const unsigned nw = width / 2;
+  const unsigned nh = height / 2;
+  std::vector<uint8_t> out(static_cast<size_t>(nw) * nh);
+  for (unsigned y = 0; y < nh; ++y) {
+    for (unsigned x = 0; x < nw; ++x) {
+      const unsigned s =
+          static_cast<unsigned>(toner[(2 * y) * width + (2 * x)]) +
+          static_cast<unsigned>(toner[(2 * y) * width + (2 * x + 1)]) +
+          static_cast<unsigned>(toner[(2 * y + 1) * width + (2 * x)]) +
+          static_cast<unsigned>(toner[(2 * y + 1) * width + (2 * x + 1)]);
+      out[static_cast<size_t>(y) * nw + x] =
+          static_cast<uint8_t>((s + 2) / 4);
+    }
+  }
+  toner.swap(out);
+  width = nw;
+  height = nh;
+}
+
 void floyd_steinberg(uint8_t* toner, unsigned width, unsigned height) {
   if (width == 0 || height == 0) {
     return;

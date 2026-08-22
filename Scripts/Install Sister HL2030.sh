@@ -179,6 +179,11 @@ echo
 echo "Para testar: abre uma página no Preview e imprime na"
 echo "\"Brother HL-2030 series\"."
 echo
+echo "Modos no diálogo de impressão, em ${c_bold}Qualidade${c_reset}:"
+echo "  • Rascunho — 300 dpi, com poupança de toner"
+echo "  • Normal   — 600 dpi, com poupança de toner (predefinição)"
+echo "  • Alta     — HQ1200, toner cheio (o modo fino da Brother)"
+echo
 echo "Se a página sair em branco ou invertida, abre um problema no"
 echo "repositório SisterHL2030 e descreve o que viste."
 pause
