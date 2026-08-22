@@ -116,8 +116,8 @@ detect_hl2030_uri() {
   lpinfo -v 2>/dev/null | awk '/usb:\/\/Brother\/HL-2030/{print $2; exit}'
 }
 
-# The IPP façade used to advertise via Bonjour as "HL-2030", so macOS
-# showed a second printer next to the CUPS queue. Keep only `keep`.
+# Drop extra CUPS queues that point at the Sister IPP façade, so this Mac
+# keeps a single added printer. AirPrint on the LAN still uses Bonjour.
 remove_duplicate_sister_queues() {
   local keep="${1:-$DEFAULT_QUEUE}"
   local line name uri
@@ -142,7 +142,7 @@ remove_duplicate_sister_queues() {
     fi
   done < <(lpstat -v 2>/dev/null || true)
   local extra
-  for extra in HL_2030 HL-2030 localhost; do
+  for extra in HL_2030 HL-2030 localhost Brother_HL_2030; do
     [[ "$extra" == "$keep" ]] && continue
     /usr/sbin/lpadmin -x "$extra" 2>/dev/null || true
   done

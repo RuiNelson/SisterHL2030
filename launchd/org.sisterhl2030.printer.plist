@@ -19,11 +19,9 @@
 		<string>/Library/Printers/SisterHL2030/icon.png</string>
 		<string>-p</string>
 		<string>8631</string>
-		<string>-n</string>
-		<string>localhost</string>
 		<string>-r</string>
-		<string>off</string>
-		<string>HL-2030</string>
+		<string>_universal,_print</string>
+		<string>Brother HL-2030</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

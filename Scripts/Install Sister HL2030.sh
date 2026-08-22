@@ -181,6 +181,9 @@ echo
 echo "Para testar: abre uma página no Preview e imprime na"
 echo "\"Brother HL-2030 series\"."
 echo
+echo "No iPhone/iPad, na mesma Wi‑Fi, a impressora aparece como"
+echo "\"Brother HL-2030\" (AirPrint). Este Mac tem de estar ligado."
+echo
 echo "Modos no diálogo de impressão, em ${c_bold}Qualidade${c_reset}:"
 echo "  • Rascunho — 300 dpi, com poupança de toner"
 echo "  • Normal   — 600 dpi, com poupança de toner (predefinição)"
