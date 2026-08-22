@@ -119,6 +119,10 @@ detect_hl2030_uri() {
 # Drop extra CUPS queues that point at the Sister IPP façade, so this Mac
 # keeps a single added printer. AirPrint on the LAN still uses Bonjour.
 # LC_ALL=C keeps lpstat output in English, whatever the user's locale is.
+#
+# A queue left on a dnssd:// URI is not just untidy: if CUPS also shares that
+# queue, the Mac advertises it back on Bonjour and the URI can resolve into
+# that copy of itself, so jobs hang on "looking for the printer".
 remove_duplicate_sister_queues() {
   local keep="${1:-$DEFAULT_QUEUE}"
   local line name uri
@@ -128,7 +132,9 @@ remove_duplicate_sister_queues() {
     uri="${name#*: }"
     name="${name%%:*}"
     [[ "$name" == "$keep" ]] && continue
-    if [[ "$uri" == *":8631"* || "$uri" == *"HL-2030._ipp._tcp"* ]]; then
+    # "HL-2030._ipp" matches both _ipp._tcp and the _ipps._tcp TLS variant,
+    # which is the one macOS discovers and adds first.
+    if [[ "$uri" == *":8631"* || "$uri" == *"HL-2030._ipp"* ]]; then
       echo "Removing duplicate queue: $name"
       /usr/sbin/lpadmin -x "$name" 2>/dev/null || true
     fi

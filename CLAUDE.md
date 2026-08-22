@@ -144,7 +144,13 @@ output is English whatever the user's locale is.
 - `CMakeLists.txt` still has an `install()` rule for `ppd/Sister-HL-2030.ppd`,
   but the installer deliberately deletes any installed copy so CUPS cannot pick
   the legacy PPD path. The PPD is historical.
-- Only one CUPS queue should exist; `remove_duplicate_sister_queues` in
-  `_common.sh` prunes the extras that Bonjour/AirPrint discovery creates.
+- Only one CUPS queue should exist, and it must stay on `ipp://localhost:8631`
+  with `printer-is-shared=false`. `remove_duplicate_sister_queues` in
+  `_common.sh` prunes the extras Bonjour/AirPrint discovery creates — its glob
+  says `HL-2030._ipp` on purpose, so it also catches the `_ipps._tcp` variant
+  macOS discovers first. A queue left on a `dnssd://` URI *and* shared is the
+  bad case: CUPS advertises it back on Bonjour, the URI resolves into that copy
+  of itself, and jobs hang on "looking for the printer" — which also starves
+  the queue of `marker-*`, so Supply Levels goes blank.
 - Commit messages in this repo are a single imperative sentence ending in a
   period ("Map print quality to resolution and toner save.").

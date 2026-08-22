@@ -159,6 +159,9 @@ if /usr/sbin/lpadmin -p "$queue" \
   /usr/sbin/cupsenable "$queue" 2>/dev/null || true
   /usr/sbin/cupsaccept "$queue" 2>/dev/null || true
   /usr/sbin/lpoptions -d "$queue" 2>/dev/null || true
+  # Re-assert it separately: a queue CUPS shares is advertised back on
+  # Bonjour, and a dnssd:// URI can then resolve into that copy of itself.
+  /usr/sbin/lpadmin -p "$queue" -o printer-is-shared=false 2>/dev/null || true
   echo "${c_green}Queue \"${queue}\" points at ipp://localhost:8631/ipp/print${c_reset}"
 else
   echo "${c_yellow}Could not create the queue automatically.${c_reset}"
