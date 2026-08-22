@@ -92,8 +92,11 @@ From `paperinf` (width × height in pixels at 600 dpi):
 | Com-10 | 2475 | 5700 |
 | Monarch | 2325 | 4500 |
 
-At 300 dpi, dimensions are halved; at 1200 they are doubled. Non-printable
-margins in the Linux PPD are 18×12 pt (¼" left/right-ish, ⅙" bottom).
+At 300 dpi, dimensions are halved; at 1200 they are doubled. The Linux PPD
+declares 18×12 pt unprintable margins. Sister advertises **0.01 mm**
+hardware margins. Zero made Apple's AirPrint path label sizes as
+`A4.Borderless` and the print dialog then Scale-to-Fits at ~96%. The laser
+still clips a few millimetres at the physical edge.
 
 ## Compression mode 1030
 

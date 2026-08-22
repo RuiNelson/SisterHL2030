@@ -116,6 +116,38 @@ detect_hl2030_uri() {
   lpinfo -v 2>/dev/null | awk '/usb:\/\/Brother\/HL-2030/{print $2; exit}'
 }
 
+# The IPP façade used to advertise via Bonjour as "HL-2030", so macOS
+# showed a second printer next to the CUPS queue. Keep only `keep`.
+remove_duplicate_sister_queues() {
+  local keep="${1:-$DEFAULT_QUEUE}"
+  local line name uri
+  while IFS= read -r line; do
+    name=""
+    uri=""
+    if [[ "$line" == "dispositivo para "* ]]; then
+      name="${line#dispositivo para }"
+      uri="${name#*: }"
+      name="${name%%:*}"
+    elif [[ "$line" == "device for "* ]]; then
+      name="${line#device for }"
+      uri="${name#*: }"
+      name="${name%%:*}"
+    else
+      continue
+    fi
+    [[ "$name" == "$keep" ]] && continue
+    if [[ "$uri" == *":8631"* || "$uri" == *"HL-2030._ipp._tcp"* ]]; then
+      echo "A remover fila duplicada: $name"
+      /usr/sbin/lpadmin -x "$name" 2>/dev/null || true
+    fi
+  done < <(lpstat -v 2>/dev/null || true)
+  local extra
+  for extra in HL_2030 HL-2030 localhost; do
+    [[ "$extra" == "$keep" ]] && continue
+    /usr/sbin/lpadmin -x "$extra" 2>/dev/null || true
+  done
+}
+
 run_as_admin() {
   local script="$1"
   local prompt="$2"

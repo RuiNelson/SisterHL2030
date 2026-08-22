@@ -47,6 +47,7 @@ set +e
   cp "$CMD" "$DEST/filter/sister-ipp-command"
   chmod 755 "$DEST/filter/rastertosisterhl2030" "$DEST/filter/sister-ipp-command"
   /bin/bash "$ROOT/Scripts/_privileged-icon.sh" "$ROOT"
+  /bin/bash "$ROOT/Scripts/_privileged-ipp-attrs.sh" "$ROOT"
 
   if [[ -n "$USB_URI" && "$USB_URI" != "-" ]]; then
     printf '%s\n' "$USB_URI" > "$DEST/device-uri"
@@ -80,6 +81,8 @@ set +e
 
   echo "Ficheiros em $DEST"
   /usr/bin/file "$DEST/filter/rastertosisterhl2030"
+  rm -f /etc/cups/ppd/localhost.ppd /etc/cups/ppd/HL_2030.ppd
+  launchctl kickstart -k system/org.cups.cupsd 2>/dev/null || true
   echo "SisterHL2030 instalado (Printer Application IPP na porta 8631)."
 ) >"$LOG" 2>&1
 status=$?

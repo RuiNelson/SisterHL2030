@@ -157,12 +157,14 @@ if /usr/sbin/lpadmin -p "$queue" \
   -o printer-is-shared=false; then
   /usr/sbin/cupsenable "$queue" 2>/dev/null || true
   /usr/sbin/cupsaccept "$queue" 2>/dev/null || true
+  /usr/sbin/lpoptions -d "$queue" 2>/dev/null || true
   echo "${c_green}Fila \"${queue}\" aponta para ipp://localhost:8631/ipp/print${c_reset}"
 else
   echo "${c_yellow}Não consegui criar a fila automaticamente.${c_reset}"
-  echo "Em Definições do Sistema → Impressoras, adiciona a impressora"
-  echo "\"HL-2030\" (IPP Everywhere / AirPrint) que o SisterHL2030 anuncia."
+  echo "Em Definições do Sistema → Impressoras, adiciona uma impressora"
+  echo "IPP com o endereço ipp://localhost:8631/ipp/print."
 fi
+remove_duplicate_sister_queues "$queue"
 
 echo
 echo "${c_green}${c_bold}Sister HL-2030 instalado.${c_reset}"

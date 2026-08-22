@@ -57,17 +57,18 @@
 *PageRegion EnvC5/C5: "<</PageSize[459 649]/ImagingBBox null>>setpagedevice"
 *CloseUI: *PageRegion
 
+*% Full-page ImageableArea so macOS does not Scale-to-Fit (~96% on A4).
 *DefaultImageableArea: A4
-*ImageableArea Letter/US Letter: "18 12 594 780"
-*ImageableArea Legal/US Legal: "18 12 594 996"
-*ImageableArea Executive/Executive: "18 12 504 744"
-*ImageableArea A4/A4: "18 12 577 830"
-*ImageableArea A5/A5: "18 12 403 583"
-*ImageableArea A6/A6: "18 12 279 408"
-*ImageableArea Env10/Com-10: "18 12 279 672"
-*ImageableArea EnvMonarch/Monarch: "18 12 261 528"
-*ImageableArea EnvDL/DL: "18 12 294 612"
-*ImageableArea EnvC5/C5: "18 12 441 637"
+*ImageableArea Letter/US Letter: "0 0 612 792"
+*ImageableArea Legal/US Legal: "0 0 612 1008"
+*ImageableArea Executive/Executive: "0 0 522 756"
+*ImageableArea A4/A4: "0 0 595 842"
+*ImageableArea A5/A5: "0 0 420 595"
+*ImageableArea A6/A6: "0 0 297 420"
+*ImageableArea Env10/Com-10: "0 0 297 684"
+*ImageableArea EnvMonarch/Monarch: "0 0 279 540"
+*ImageableArea EnvDL/DL: "0 0 312 624"
+*ImageableArea EnvC5/C5: "0 0 459 649"
 
 *DefaultPaperDimension: A4
 *PaperDimension Letter/US Letter: "612 792"
