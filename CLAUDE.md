@@ -123,11 +123,18 @@ at *configure* time, not build time, so `pkg-config` can report the link line
 (it carries absolute Homebrew paths and `-framework` flags that CMake's list
 handling would split).
 
-Open problem: `sister-printer-app devices` fails with "Unable to get available
-devices". The IOKit `sister-status --publish --loop` daemon holds the same USB
-printer, and the CUPS usb backend runs privileged — so check root and daemon
-contention before anything else. Supplies are not wired up yet; that is the
-next phase, via `papplPrinterSetSupplies()` and `papplPrinterOpenDevice()`.
+Verified so far: `devices` enumerates the HL-2030 over USB **unprivileged**,
+even with the IOKit status daemon running, and `add` produces a printer that
+advertises the right quality/resolution/media set. Not yet verified: an actual
+sheet of paper.
+
+Debugging note: `papplPrinterCreate()` reports *every* `EINVAL` as "Printer
+names must start with a letter or underscore", whatever the real cause. The
+server log carries the true reason — read it first. Declaring a raw `format`
+without a `printfile_cb` fails exactly this way.
+
+Supplies are not wired up yet; that is the next phase, via
+`papplPrinterSetSupplies()` and `papplPrinterOpenDevice()`.
 
 ## Iterating on an installed system
 

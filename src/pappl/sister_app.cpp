@@ -11,6 +11,9 @@
 
 #include <pappl/pappl.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -78,6 +81,49 @@ void quality_to_params(ipp_quality_t quality, sisterhl2030::PageParams* params) 
       params->economode = true;
       break;
   }
+}
+
+// Raw passthrough: the file is already a HL-2030 job stream, as produced by
+// sister-rawtobr. PAPPL requires this whenever a driver advertises a raw
+// format, and rejects the driver data outright without it.
+bool printfile(pappl_job_t* job, pappl_pr_options_t* options,
+               pappl_device_t* device) {
+  (void)options;
+  const char* filename = papplJobGetFilename(job);
+  if (!filename) {
+    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "No job file to print.");
+    return false;
+  }
+
+  const int fd = open(filename, O_RDONLY);
+  if (fd < 0) {
+    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "Unable to open '%s'.", filename);
+    return false;
+  }
+
+  papplJobSetImpressions(job, 1);
+
+  char buffer[65536];
+  ssize_t got;
+  bool ok = true;
+  while ((got = read(fd, buffer, sizeof(buffer))) > 0) {
+    if (papplDeviceWrite(device, buffer, static_cast<size_t>(got)) < 0) {
+      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "Write to the printer failed.");
+      ok = false;
+      break;
+    }
+  }
+  if (got < 0) {
+    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "Read from '%s' failed.", filename);
+    ok = false;
+  }
+
+  close(fd);
+  papplDeviceFlush(device);
+  if (ok) {
+    papplJobSetImpressionsCompleted(job, 1);
+  }
+  return ok;
 }
 
 bool rstartjob(pappl_job_t* job, pappl_pr_options_t* options,
@@ -226,6 +272,7 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
   driver_data->rwriteline_cb = rwriteline;
   driver_data->rendpage_cb = rendpage;
   driver_data->rendjob_cb = rendjob;
+  driver_data->printfile_cb = printfile;
   driver_data->format = "application/octet-stream";
 
   // Always take 8-bit gray and dither it ourselves: Floyd-Steinberg here
