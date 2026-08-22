@@ -61,11 +61,11 @@ enable_testing()
 add_test(NAME encoder COMMAND test_encoder)
 add_test(NAME status COMMAND test_status)
 
+# No PPD is installed: the queue is IPP Everywhere, and the installer deletes
+# any classic PPD left by earlier versions. ppd/Sister-HL-2030.ppd is kept in
+# the tree as a reference for the PJL/PCL options only.
 set(SISTER_INSTALL_FILTERDIR "/Library/Printers/SisterHL2030/filter")
-set(SISTER_INSTALL_PPDDIR "/Library/Printers/PPDs/Contents/Resources")
 install(TARGETS rastertosisterhl2030 RUNTIME DESTINATION ${SISTER_INSTALL_FILTERDIR})
 if(APPLE)
   install(TARGETS sister-status RUNTIME DESTINATION ${SISTER_INSTALL_FILTERDIR})
 endif()
-install(FILES ppd/Sister-HL-2030.ppd DESTINATION ${SISTER_INSTALL_PPDDIR}
-        RENAME "Sister HL-2030.ppd")

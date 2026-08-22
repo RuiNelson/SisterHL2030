@@ -141,9 +141,10 @@ output is English whatever the user's locale is.
 - Media margins in `ipp/printer-attrs.conf` are `1` (0.01 mm), never `0`:
   Apple's `ipp2ppd` reads 0 as borderless and the print dialog then silently
   scale-to-fits at ~96%.
-- `CMakeLists.txt` still has an `install()` rule for `ppd/Sister-HL-2030.ppd`,
-  but the installer deliberately deletes any installed copy so CUPS cannot pick
-  the legacy PPD path. The PPD is historical.
+- `ppd/Sister-HL-2030.ppd` is historical and is deliberately **not** installed
+  by `CMakeLists.txt`; the installer also deletes copies left by earlier
+  versions so CUPS cannot pick the legacy PPD path. Advertised attributes live
+  in `ipp/printer-attrs.conf` — change them there, not in the PPD.
 - Only one CUPS queue should exist, and it must stay on `ipp://localhost:8631`
   with `printer-is-shared=false`. `remove_duplicate_sister_queues` in
   `_common.sh` prunes the extras Bonjour/AirPrint discovery creates — its glob

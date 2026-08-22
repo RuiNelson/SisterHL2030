@@ -2,6 +2,12 @@
 *% SisterHL2030 — native arm64 CUPS driver for Brother HL-2030
 *% Copyright (C) 2026 Rui Nelson
 *% SPDX-License-Identifier: GPL-2.0-or-later
+*%
+*% HISTORICAL. This file is not installed and CUPS never loads it: the queue
+*% is IPP Everywhere and the installer deletes any copy earlier versions left
+*% behind. It is kept as a written record of the PJL/PCL option names and the
+*% paper geometry. Attributes the driver actually advertises live in
+*% ipp/printer-attrs.conf.
 
 *FormatVersion: "4.3"
 *FileVersion: "0.1.0"
