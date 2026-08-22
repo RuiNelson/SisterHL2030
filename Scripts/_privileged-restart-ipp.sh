@@ -6,6 +6,7 @@ ROOT="${1:-}"
 PLIST_SRC="${ROOT}/launchd/org.sisterhl2030.printer.plist"
 PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
 LABEL="system/org.sisterhl2030.printer"
+/bin/bash "${ROOT}/Scripts/_privileged-icon.sh" "$ROOT"
 cp "$PLIST_SRC" "$PLIST_DEST"
 chmod 644 "$PLIST_DEST"
 launchctl bootout "$LABEL" 2>/dev/null || true

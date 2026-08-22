@@ -19,6 +19,8 @@
 		<string>HL-2030 series</string>
 		<string>-l</string>
 		<string>SisterHL2030</string>
+		<string>-i</string>
+		<string>/Library/Printers/SisterHL2030/icon.png</string>
 		<string>-p</string>
 		<string>8631</string>
 		<string>-s</string>

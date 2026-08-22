@@ -46,6 +46,7 @@ set +e
   cp "$FILTER" "$DEST/filter/rastertosisterhl2030"
   cp "$CMD" "$DEST/filter/sister-ipp-command"
   chmod 755 "$DEST/filter/rastertosisterhl2030" "$DEST/filter/sister-ipp-command"
+  /bin/bash "$ROOT/Scripts/_privileged-icon.sh" "$ROOT"
 
   if [[ -n "$USB_URI" && "$USB_URI" != "-" ]]; then
     printf '%s\n' "$USB_URI" > "$DEST/device-uri"
