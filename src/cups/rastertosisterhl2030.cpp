@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
                  "mode=%s ECONOMODE=%s\n",
                  header.cupsWidth, header.cupsHeight, header.cupsBitsPerPixel,
                  header.cupsNumColors, header.cupsColorSpace,
-                 already_1bit ? "passthrough" : "Floyd-Steinberg",
+                 already_1bit ? "passthrough" : "Atkinson",
                  mode_name(params.resolution),
                  params.economode ? "ON" : "OFF");
 
@@ -372,7 +372,7 @@ int main(int argc, char* argv[]) {
               (static_cast<double>(header.cupsWidth) * header.cupsHeight);
           std::fprintf(stderr, "INFO: mean toner before dither %.1f / 255\n",
                        mean);
-          sisterhl2030::floyd_steinberg(toner.data(), out_w, out_h);
+          sisterhl2030::atkinson(toner.data(), out_w, out_h);
         } else {
           // 1-bit draft: 2×2 box already produced 0..255; re-threshold.
           for (uint8_t& t : toner) {

@@ -7,7 +7,7 @@
 // replaces the ippeveprinter façade, its printer-attrs.conf, the CUPS usb
 // backend and the device-uri file. The raster encoder in src/encoder is
 // reused unchanged: PAPPL pushes one line at a time, we buffer the page (as
-// Floyd-Steinberg needs it anyway) and hand it to Job::encode_page.
+// the dither needs it anyway) and hand it to Job::encode_page.
 
 #include <pappl/pappl.h>
 
@@ -264,7 +264,7 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
               "Received %u of %u raster lines.", state->lines_seen,
               height);
 
-  sisterhl2030::floyd_steinberg(state->toner.data(), width, height);
+  sisterhl2030::atkinson(state->toner.data(), width, height);
 
   const unsigned bpl = (width + 7) / 8;
   std::vector<uint8_t> packed(static_cast<size_t>(bpl) * height, 0);
@@ -343,7 +343,7 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
   driver_data->printfile_cb = printfile;
   driver_data->format = "application/octet-stream";
 
-  // Always take 8-bit gray and dither it ourselves: Floyd-Steinberg here
+  // Always take 8-bit gray and dither it ourselves: Atkinson here
   // beats handing the printer a pre-thresholded bitmap.
   driver_data->raster_types = PAPPL_PWG_RASTER_TYPE_BLACK_1 |
                               PAPPL_PWG_RASTER_TYPE_SGRAY_8 |

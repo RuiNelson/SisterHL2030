@@ -1,10 +1,16 @@
 // Copyright (C) 2026 Rui Nelson
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Floyd–Steinberg (1976), serpentine:
+// Atkinson (1980s, Bill Atkinson at Apple), serpentine:
 //
-//     *  7
-//   3  5  1     / 16
+//        *  1  1
+//     1  1  1
+//        1        / 8
+//
+// Only six eighths of the error is passed on; the remaining quarter is
+// dropped. That is what gives Atkinson its crisper, higher-contrast look
+// compared with Floyd–Steinberg, at the cost of flattening detail in the
+// deepest shadows and brightest highlights.
 
 #include "encoder/halftone.h"
 
@@ -107,7 +113,7 @@ void box_downsample_2x(std::vector<uint8_t>& toner, unsigned& width,
   height = nh;
 }
 
-void floyd_steinberg(uint8_t* toner, unsigned width, unsigned height) {
+void atkinson(uint8_t* toner, unsigned width, unsigned height) {
   if (width == 0 || height == 0) {
     return;
   }
@@ -125,6 +131,8 @@ void floyd_steinberg(uint8_t* toner, unsigned width, unsigned height) {
   };
 
   for (unsigned y = 0; y < height; ++y) {
+    // Serpentine, as before: the kernel is mirrored on right-to-left rows so
+    // the diffusion stays symmetric and does not build directional worms.
     const int dir = (y % 2 == 0) ? 1 : -1;
     const int x0 = (dir > 0) ? 0 : static_cast<int>(width) - 1;
     const int x1 = (dir > 0) ? static_cast<int>(width) : -1;
@@ -133,11 +141,14 @@ void floyd_steinberg(uint8_t* toner, unsigned width, unsigned height) {
       const int old = p;
       const int neu = old >= 128 ? 255 : 0;
       p = neu;
-      const int err = old - neu;
-      add(x + dir, static_cast<int>(y), err * 7 / 16);
-      add(x - dir, static_cast<int>(y) + 1, err * 3 / 16);
-      add(x, static_cast<int>(y) + 1, err * 5 / 16);
-      add(x + dir, static_cast<int>(y) + 1, err / 16);
+      const int err = (old - neu) / 8;
+      const int yi = static_cast<int>(y);
+      add(x + dir, yi, err);
+      add(x + 2 * dir, yi, err);
+      add(x - dir, yi + 1, err);
+      add(x, yi + 1, err);
+      add(x + dir, yi + 1, err);
+      add(x, yi + 2, err);
     }
   }
 

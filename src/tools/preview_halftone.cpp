@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Rui Nelson
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Screen preview of the same Floyd–Steinberg halftone used when printing.
+// Screen preview of the same Atkinson halftone used when printing.
 // Writes a BMP (white paper, black toner) so Preview.app can open it.
 
 #include <algorithm>
@@ -200,7 +200,7 @@ void halftone_rgb(const std::vector<uint8_t>& rgb, int w, int h,
       toner[static_cast<size_t>(y) * w + x] = sisterhl2030::rgb_to_toner(r, g, b);
     }
   }
-  sisterhl2030::floyd_steinberg(toner.data(), static_cast<unsigned>(w),
+  sisterhl2030::atkinson(toner.data(), static_cast<unsigned>(w),
                                 static_cast<unsigned>(h));
   for (int y = 0; y < h; ++y) {
     uint8_t* dst = paper_bgr->data() + static_cast<size_t>(y) * w * 3;
@@ -319,7 +319,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cerr << "Wrote " << output << " (" << ow << "x" << oh
-            << "). Left = original, right = Floyd-Steinberg (as on paper).\n";
+            << "). Left = original, right = Atkinson (as on paper).\n";
   if (chart) {
     std::cerr << "Chart: ramp, 25/50/75% gray, colour patches, soft disc.\n"
               << "If the RIGHT side is a readable gray photo, the algorithm is\n"

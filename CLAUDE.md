@@ -87,7 +87,7 @@ VID `0x04f9` PID `0x0027`, bulk OUT `0x01` / IN `0x82`).
   PJL/PCL envelope and drives banding (flush every 128 lines or when a band
   would exceed 16 384 payload bytes); `line.cc` packs a scanline (white / absolute
   / delta-vs-previous with substitute and repeat edits); `block.h` is the band
-  buffer; `halftone.cc` is serpentine Floyd–Steinberg plus the colorspace →
+  buffer; `halftone.cc` is serpentine Atkinson dithering plus the colorspace →
   toner curves and the 600→300 box downsample.
 - `src/cups/rastertosisterhl2030.cpp` — the only CUPS-linked code. Reads
   `cups_page_header2_t`, maps colorspaces, resolves quality → `PageParams`.
@@ -108,7 +108,7 @@ and ECONOMODE OFF.
 PAPPL owns the USB device, the IPP attributes and the web UI, so it retires
 `sister-ipp-command`, `printer-attrs.conf`, `device-uri`, the `usb.lock`
 flock, and the no-op `.sister-status` job. It reuses the encoder unchanged —
-PAPPL pushes raster a line at a time, the app buffers the page (Floyd-Steinberg
+PAPPL pushes raster a line at a time, the app buffers the page (the dither
 needs the whole page anyway) and calls `Job::encode_page`.
 
 It is **opt-in** and off by default, because it fetches and builds PAPPL:

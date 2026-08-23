@@ -96,15 +96,20 @@ def decode(data):
         end = i + nbytes - 2
         while i < end:
             line, i, bpl = decode_line(data, i, ref, bpl)
-            if bpl is None:
+            # An all-white line carries no length, so it cannot tell us the
+            # line width; wait for a real one rather than latching zero.
+            if bpl is None and len(line) > 0:
                 bpl = len(line)
-            if len(line) < bpl:
+            if bpl is not None and len(line) < bpl:
                 line.extend(bytearray(bpl - len(line)))
             rows.append(bytes(line))
             ref = line
         if len(rows) and nlines == 0:
             break
-    return rows, (bpl or 0)
+    bpl = bpl or 0
+    # Pad any leading blank lines now that the width is known.
+    rows = [r + bytes(bpl - len(r)) if len(r) < bpl else r for r in rows]
+    return rows, bpl
 
 
 def write_png(path, rows, bpl):

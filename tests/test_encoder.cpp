@@ -61,7 +61,7 @@ int main() {
   using sisterhl2030::PageParams;
   using sisterhl2030::device_gray_to_toner;
   using sisterhl2030::device_k_to_toner;
-  using sisterhl2030::floyd_steinberg;
+  using sisterhl2030::atkinson;
   using sisterhl2030::pack_toner_row;
   using sisterhl2030::rgb_to_toner;
 
@@ -69,7 +69,7 @@ int main() {
     const unsigned w = 256;
     const unsigned h = 64;
     std::vector<uint8_t> toner(w * h, 128);
-    floyd_steinberg(toner.data(), w, h);
+    atkinson(toner.data(), w, h);
     std::vector<uint8_t> packed((w + 7) / 8);
     int black = 0;
     for (unsigned y = 0; y < h; ++y) {
@@ -78,7 +78,7 @@ int main() {
     }
     const int total = static_cast<int>(w * h);
     expect(black > total / 5 && black < (total * 4) / 5,
-           "mid-gray Floyd-Steinberg is mixed, not a 50% hard threshold slab");
+           "mid-gray Atkinson is mixed, not a 50% hard threshold slab");
     std::vector<uint8_t> ramp(w);
     for (unsigned x = 0; x < w; ++x) {
       ramp[x] = rgb_to_toner(static_cast<uint8_t>(x), static_cast<uint8_t>(x),
@@ -89,7 +89,7 @@ int main() {
     for (unsigned y = 1; y < 8; ++y) {
       std::memcpy(ramp_page.data() + y * w, ramp.data(), w);
     }
-    floyd_steinberg(ramp_page.data(), w, 8);
+    atkinson(ramp_page.data(), w, 8);
     int dark = 0, light = 0;
     for (unsigned y = 0; y < 8; ++y) {
       for (unsigned x = 0; x < 32; ++x) {
@@ -311,7 +311,7 @@ int main() {
     expect(mid != 0 && mid != 255, "mid-grey maps to a mid toner value");
 
     std::vector<uint8_t> toner(static_cast<size_t>(w) * h, mid);
-    sisterhl2030::floyd_steinberg(toner.data(), w, h);
+    sisterhl2030::atkinson(toner.data(), w, h);
 
     std::vector<uint8_t> packed((w + 7) / 8);
     unsigned mixed = 0;

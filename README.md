@@ -11,7 +11,7 @@ send Brother's compressed stream over USB.
 
 * Apple Silicon support
 * When printing a page, it will default to 100% scale
-* Floyd-Steinberg half-toning algorithm
+* Atkinson half-toning algorithm
 * AirPrint support and network sharing support
 * Consumable levels reporting
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Generate an on-screen preview of the Floyd–Steinberg halftone (no paper).
+# Generate an on-screen preview of the Atkinson halftone (no paper).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_common.sh
@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/_common.sh"
 require_macos
 banner "Preview the halftone (on screen)"
 echo "This does NOT print. It opens a black-and-white image in Preview,"
-echo "screened with the same Floyd–Steinberg dithering the HL-2030 uses."
+echo "screened with the same Atkinson dithering the HL-2030 uses."
 echo
 echo "Left = original.  Right = how it should come out on paper."
 echo

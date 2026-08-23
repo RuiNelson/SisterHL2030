@@ -9,10 +9,10 @@
 
 namespace sisterhl2030 {
 
-// Floyd–Steinberg error diffusion with serpentine scanning.
+// Atkinson error diffusion with serpentine scanning.
 // `toner` is width*height samples, 0 = paper white, 255 = solid black.
 // On return each sample is 0 or 255.
-void floyd_steinberg(uint8_t* toner, unsigned width, unsigned height);
+void atkinson(uint8_t* toner, unsigned width, unsigned height);
 
 // Pack one 0/255 toner row to 1-bit MSB-first (1 = black).
 void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed);
