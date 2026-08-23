@@ -41,8 +41,8 @@ if command -v ipptool >/dev/null 2>&1 && nc -z localhost 8631 2>/dev/null; then
 fi
 
 pid=""
-if launchctl print system/org.sisterhl2030.printer >/dev/null 2>&1; then
-  pid="$(launchctl print system/org.sisterhl2030.printer 2>/dev/null |
+if launchctl print system/com.ruinelson.sisterhl2030.printer >/dev/null 2>&1; then
+  pid="$(launchctl print system/com.ruinelson.sisterhl2030.printer 2>/dev/null |
     awk '/pid =/{print $3; exit}')"
 fi
 
@@ -72,7 +72,7 @@ else
   fail=1
 fi
 if [[ -n "$pid" ]]; then
-  say "launchd" "org.sisterhl2030.printer pid $pid"
+  say "launchd" "com.ruinelson.sisterhl2030.printer pid $pid"
 else
   say "launchd" "not running"
   fail=1

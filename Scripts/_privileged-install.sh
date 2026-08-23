@@ -8,10 +8,15 @@ QUEUE="${2:-Brother_HL_2030_series}"
 USB_URI="${3:-}"
 LOG="/tmp/sisterhl2030-install.log"
 DEST="/Library/Printers/SisterHL2030"
-PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
+PLIST_DEST="/Library/LaunchDaemons/com.ruinelson.sisterhl2030.printer.plist"
 STATUS_PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.status.plist"
-LABEL="system/org.sisterhl2030.printer"
+LABEL="system/com.ruinelson.sisterhl2030.printer"
 STATUS_LABEL="system/org.sisterhl2030.status"
+# 1.1.x shipped the printer daemon under this label before the identifier
+# base moved to com.ruinelson.sisterhl2030; boot it out so an upgrade
+# doesn't leave the old instance running alongside the new one.
+LEGACY_LABEL="system/org.sisterhl2030.printer"
+LEGACY_PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
 # The IPP printer name inside the printer application. PAPPL shows a friendlier
 # name over Bonjour; see kDnsSdName in src/pappl/sister_app.cpp.
 PRINTER="Brother_HL_2030"
@@ -32,7 +37,7 @@ set +e
 
   APP="$ROOT/build/sister-printer-app"
   STATUS_BIN="$ROOT/build/sister-status"
-  PLIST="$ROOT/launchd/org.sisterhl2030.printer.plist"
+  PLIST="$ROOT/launchd/com.ruinelson.sisterhl2030.printer.plist"
 
   if [[ ! -x "$APP" ]]; then
     echo "Missing the printer application: $APP" >&2
@@ -66,6 +71,8 @@ set +e
   # no-op status job daemon all go away.
   launchctl bootout "$STATUS_LABEL" 2>/dev/null || true
   rm -f "$STATUS_PLIST_DEST"
+  launchctl bootout "$LEGACY_LABEL" 2>/dev/null || true
+  rm -f "$LEGACY_PLIST_DEST"
   rm -rf "$DEST/filter"
   rm -f "$DEST/printer-attrs.conf" "$DEST/device-uri" "$DEST/usb.lock" \
         "$DEST/status-empty" "$DEST/toner-save"

@@ -47,7 +47,7 @@ The driver is a PAPPL printer application. It owns the USB device end to end:
 
 ```
 app / CUPS queue "Brother_HL_2030_series" (ipp://localhost:8631/ipp/print)
-    → sister-printer-app  (LaunchDaemon org.sisterhl2030.printer, port 8631)
+    → sister-printer-app  (LaunchDaemon com.ruinelson.sisterhl2030.printer, port 8631)
         rasterize → sRGB → luma → Atkinson → mode 1030 → USB
     → PJL status on the same device for toner and drum
 ```
@@ -66,6 +66,17 @@ The **ippeveprinter façade is retired**. `sister-ipp-command`,
 each of them worked around. `rastertosisterhl2030` still builds as a classic
 CUPS filter but is no longer installed; it is the reference path for comparing
 encoder output.
+
+All identifiers — the LaunchDaemon label, the pkg identifiers in
+`Scripts/build_distribution_packages.sh` — use `com.ruinelson.sisterhl2030`
+as their reverse-DNS base. The two exceptions are historical, not current:
+`org.sisterhl2030.status` above is the label the retired façade daemon used,
+and `org.sisterhl2030.printer` is the label every 1.1.x release used for the
+printer daemon before this rename. Both stay hard-coded as cleanup targets
+(in `_privileged-install.sh`, `_privileged-sister-uninstall.sh` and their
+pkg equivalents) so installing over, or uninstalling, an older copy doesn't
+leave one of them running under the old name — do not "fix" them to the new
+base.
 
 ### Consumables
 

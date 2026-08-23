@@ -11,7 +11,7 @@
     </choices-outline>
     <choice id="default"/>
     <choice id="install" visible="false">
-        <pkg-ref id="org.sisterhl2030.pkg.install"/>
+        <pkg-ref id="com.ruinelson.sisterhl2030.pkg.install"/>
     </choice>
-    <pkg-ref id="org.sisterhl2030.pkg.install" version="@VERSION@" onConclusion="none">component-install.pkg</pkg-ref>
+    <pkg-ref id="com.ruinelson.sisterhl2030.pkg.install" version="@VERSION@" onConclusion="none">component-install.pkg</pkg-ref>
 </installer-gui-script>

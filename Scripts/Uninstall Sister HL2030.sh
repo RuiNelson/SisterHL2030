@@ -27,7 +27,7 @@ if [[ -e "$SISTER_ROOT" ]]; then
   echo "  • Found $SISTER_ROOT"
   found=1
 fi
-if [[ -f /Library/LaunchDaemons/org.sisterhl2030.printer.plist ]]; then
+if [[ -f /Library/LaunchDaemons/com.ruinelson.sisterhl2030.printer.plist ]]; then
   echo "  • Found the background service"
   found=1
 fi

@@ -7,8 +7,11 @@ export PATH="/usr/sbin:/usr/bin:/bin:/sbin"
 QUEUE="Brother_HL_2030_series"
 DEST="/Library/Printers/SisterHL2030"
 LOG="/tmp/sisterhl2030-uninstall-sister.log"
-LABEL="system/org.sisterhl2030.printer"
+LABEL="system/com.ruinelson.sisterhl2030.printer"
 STATUS_LABEL="system/org.sisterhl2030.status"
+# 1.1.x used this label before the identifier base moved to
+# com.ruinelson.sisterhl2030; clean it up too so nothing is left running.
+LEGACY_LABEL="system/org.sisterhl2030.printer"
 
 set +e
 (
@@ -16,12 +19,13 @@ set +e
   echo "SisterHL2030 pkg uninstall"
   echo "date: $(date)"
 
-  for label in "$LABEL" "$STATUS_LABEL"; do
+  for label in "$LABEL" "$STATUS_LABEL" "$LEGACY_LABEL"; do
     launchctl bootout "$label" 2>/dev/null
     launchctl disable "$label" 2>/dev/null
   done
-  rm -f /Library/LaunchDaemons/org.sisterhl2030.printer.plist \
-        /Library/LaunchDaemons/org.sisterhl2030.status.plist
+  rm -f /Library/LaunchDaemons/com.ruinelson.sisterhl2030.printer.plist \
+        /Library/LaunchDaemons/org.sisterhl2030.status.plist \
+        /Library/LaunchDaemons/org.sisterhl2030.printer.plist
   echo "LaunchDaemons removed."
 
   while IFS= read -r line; do

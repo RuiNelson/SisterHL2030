@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>org.sisterhl2030.printer</string>
+	<string>com.ruinelson.sisterhl2030.printer</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/Library/Printers/SisterHL2030/sister-printer-app</string>

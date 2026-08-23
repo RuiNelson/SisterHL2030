@@ -6,8 +6,11 @@ export PATH="/usr/sbin:/usr/bin:/bin:/sbin"
 QUEUE="${1:-Brother_HL_2030_series}"
 DEST="/Library/Printers/SisterHL2030"
 LOG="/tmp/sisterhl2030-uninstall.log"
-LABEL="system/org.sisterhl2030.printer"
+LABEL="system/com.ruinelson.sisterhl2030.printer"
 STATUS_LABEL="system/org.sisterhl2030.status"
+# 1.1.x used this label before the identifier base moved to
+# com.ruinelson.sisterhl2030; clean it up too so nothing is left running.
+LEGACY_LABEL="system/org.sisterhl2030.printer"
 
 set +e
 (
@@ -15,13 +18,15 @@ set +e
   echo "SisterHL2030 uninstall"
   echo "date: $(date)"
 
-  # Stop the printer application, and the status daemon older installs left.
-  for label in "$LABEL" "$STATUS_LABEL"; do
+  # Stop the printer application, and the status/legacy daemons older
+  # installs left.
+  for label in "$LABEL" "$STATUS_LABEL" "$LEGACY_LABEL"; do
     launchctl bootout "$label" 2>/dev/null
     launchctl disable "$label" 2>/dev/null
   done
-  rm -f /Library/LaunchDaemons/org.sisterhl2030.printer.plist \
-        /Library/LaunchDaemons/org.sisterhl2030.status.plist
+  rm -f /Library/LaunchDaemons/com.ruinelson.sisterhl2030.printer.plist \
+        /Library/LaunchDaemons/org.sisterhl2030.status.plist \
+        /Library/LaunchDaemons/org.sisterhl2030.printer.plist
   echo "LaunchDaemons removed."
 
   # Drop every CUPS queue that pointed at us, however it was added.

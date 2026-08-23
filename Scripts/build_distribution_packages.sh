@@ -46,9 +46,9 @@ cp "$ROOT/build/sister-status" "$PAYLOAD/sister-status"
 cp "$ROOT/Scripts/_privileged-create-queue.sh" "$PAYLOAD/.create-queue.sh"
 chmod 755 "$PAYLOAD/sister-printer-app" "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
 
-cp "$ROOT/launchd/org.sisterhl2030.printer.plist" \
-   "$LAUNCHD_DEST/org.sisterhl2030.printer.plist"
-chmod 644 "$LAUNCHD_DEST/org.sisterhl2030.printer.plist"
+cp "$ROOT/launchd/com.ruinelson.sisterhl2030.printer.plist" \
+   "$LAUNCHD_DEST/com.ruinelson.sisterhl2030.printer.plist"
+chmod 644 "$LAUNCHD_DEST/com.ruinelson.sisterhl2030.printer.plist"
 
 # icon.png (IPP) and .sister.icns (CUPS, linked into a PPD by postinstall)
 # regenerated the same way Scripts/_privileged-icon.sh does, from the one
@@ -77,7 +77,7 @@ trap - EXIT
 echo "Building the install component ($VERSION)…"
 pkgbuild \
   --root "$DISTRIB/root-install" \
-  --identifier org.sisterhl2030.pkg.install \
+  --identifier com.ruinelson.sisterhl2030.pkg.install \
   --version "$VERSION" \
   --install-location / \
   --scripts "$DISTRIB/scripts-install" \
@@ -101,7 +101,7 @@ productbuild \
 echo "Building UninstallSisterDrivers.pkg ($VERSION)…"
 pkgbuild \
   --nopayload \
-  --identifier org.sisterhl2030.pkg.uninstall-sister \
+  --identifier com.ruinelson.sisterhl2030.pkg.uninstall-sister \
   --version "$VERSION" \
   --scripts "$DISTRIB/scripts-uninstall-sister" \
   --sign "$SIGN_ID" \
@@ -110,7 +110,7 @@ pkgbuild \
 echo "Building UninstallBrotherDrivers.pkg ($VERSION)…"
 pkgbuild \
   --nopayload \
-  --identifier org.sisterhl2030.pkg.uninstall-brother \
+  --identifier com.ruinelson.sisterhl2030.pkg.uninstall-brother \
   --version "$VERSION" \
   --scripts "$DISTRIB/scripts-uninstall-brother" \
   --sign "$SIGN_ID" \

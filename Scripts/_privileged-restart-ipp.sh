@@ -6,9 +6,9 @@ set -euo pipefail
 
 ROOT="${1:-}"
 DEST="/Library/Printers/SisterHL2030"
-PLIST_SRC="${ROOT}/launchd/org.sisterhl2030.printer.plist"
-PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
-LABEL="system/org.sisterhl2030.printer"
+PLIST_SRC="${ROOT}/launchd/com.ruinelson.sisterhl2030.printer.plist"
+PLIST_DEST="/Library/LaunchDaemons/com.ruinelson.sisterhl2030.printer.plist"
+LABEL="system/com.ruinelson.sisterhl2030.printer"
 
 if [[ -z "$ROOT" ]]; then
   echo "Internal use: _privileged-restart-ipp.sh ROOT" >&2

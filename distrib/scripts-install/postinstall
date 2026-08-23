@@ -1,15 +1,20 @@
 #!/bin/bash
 # postinstall for InstallSisterDrivers.pkg.
 # The payload has already placed sister-printer-app, sister-status, the
-# icon assets and org.sisterhl2030.printer.plist at their final paths; this
+# icon assets and com.ruinelson.sisterhl2030.printer.plist at their final paths; this
 # finishes what Scripts/_privileged-install.sh does after the copy step.
 export PATH="/usr/sbin:/usr/bin:/bin:/sbin"
 
 DEST="/Library/Printers/SisterHL2030"
-PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
+PLIST_DEST="/Library/LaunchDaemons/com.ruinelson.sisterhl2030.printer.plist"
 STATUS_PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.status.plist"
-LABEL="system/org.sisterhl2030.printer"
+LABEL="system/com.ruinelson.sisterhl2030.printer"
 STATUS_LABEL="system/org.sisterhl2030.status"
+# 1.1.x shipped the printer daemon under this label before the identifier
+# base moved to com.ruinelson.sisterhl2030; boot it out so an upgrade
+# doesn't leave the old instance running alongside the new one.
+LEGACY_LABEL="system/org.sisterhl2030.printer"
+LEGACY_PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
 PRINTER="Brother_HL_2030"
 QUEUE="Brother_HL_2030_series"
 LOG="/tmp/sisterhl2030-install.log"
@@ -36,6 +41,8 @@ set +e
   # Retire the ippeveprinter façade, same as the shell installer.
   launchctl bootout "$STATUS_LABEL" 2>/dev/null || true
   rm -f "$STATUS_PLIST_DEST"
+  launchctl bootout "$LEGACY_LABEL" 2>/dev/null || true
+  rm -f "$LEGACY_PLIST_DEST"
   rm -rf "$DEST/filter"
   rm -f "$DEST/printer-attrs.conf" "$DEST/device-uri" "$DEST/usb.lock" \
         "$DEST/status-empty" "$DEST/toner-save"
