@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 # Bump this when shipping a user-visible driver change. The git sha is
 # appended automatically so an install can be matched to a exact build.
-project(sisterhl2030 VERSION 1.1.0 LANGUAGES CXX)
+project(sisterhl2030 VERSION 1.1.3 LANGUAGES CXX)
 
 set(SISTER_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 set(_sister_git_head "${CMAKE_SOURCE_DIR}/.git/HEAD")

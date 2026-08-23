@@ -325,20 +325,17 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   // mapping), leave it; if it sent 600, box-filter down.
   if (state->params.resolution == 300 && state->raster_dpi >= 450) {
     sisterhl2030::box_downsample_2x(state->toner, width, height);
-  } else if (state->params.resolution == 1200 && state->raster_dpi < 900) {
-    // HQ1200 pixel grid is twice 600 dpi. RAS1200MODE + a 600 dpi bitmap
-    // prints at half size.
-    sisterhl2030::nn_upsample_2x(state->toner, width, height);
   }
 
-  // Same scene at 300 dpi + ECONOMODE looks balanced; 600 dpi + ECONOMODE
-  // is too light (less dot gain and toner save stack); 1200 dpi with
-  // ECONOMODE off is too heavy. Re-aim coverage at the draft look.
+  // Draft at 300 dpi is the reference look. 600 and 1200 have less dot
+  // gain, so they need more digital coverage to match. Fine at 1.28 was
+  // a hair too heavy once the page was full size (ECONOMODE is already
+  // off); 1.18 sits between that and the washed-out 0.82.
   float gain = 1.0f;
   if (state->params.resolution == 600) {
     gain = 1.28f;
   } else if (state->params.resolution == 1200) {
-    gain = 0.82f;
+    gain = 1.18f;
   }
   sisterhl2030::scale_coverage(state->toner.data(), state->toner.size(), gain);
 
@@ -360,6 +357,16 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
               height);
 
   sisterhl2030::atkinson(state->toner.data(), width, height);
+
+  // HQ1200's pixel grid is twice 600 dpi. Dither at 600 first: Atkinson on
+  // a 1200 dpi A4 page is ~140 million pixels and a 500 MB error buffer,
+  // which never finishes. Pixel-double the 1-bit result so RAS1200MODE
+  // still prints at full size.
+  if (state->params.resolution == 1200 && state->raster_dpi < 900) {
+    sisterhl2030::nn_upsample_2x(state->toner, width, height);
+    papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+                "HQ1200 upsampled to %ux%u after dither.", width, height);
+  }
 
   const unsigned bpl = (width + 7) / 8;
   std::vector<uint8_t> packed(static_cast<size_t>(bpl) * height, 0);
