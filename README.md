@@ -94,6 +94,15 @@ The installer **refuses to continue** if it still finds the official
 Brother drivers, so they cannot be stacked. macOS will ask for an
 administrator password on each step.
 
+Each build has a driver version (`1.1.0` plus the git commit). Confirm the
+copy that is installed is the one serving jobs:
+
+```sh
+./build/sister-printer-app --version
+/Library/Printers/SisterHL2030/sister-printer-app --version
+"Scripts/Check Sister HL2030.sh"
+```
+
 To remove SisterHL2030 again, run `Scripts/Uninstall Sister HL2030.sh`. It
 takes out the printer application, its background service, its saved printer
 state and any queue pointing at it.

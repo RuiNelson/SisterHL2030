@@ -4,6 +4,7 @@
 #ifndef SISTERHL2030_HALFTONE_H
 #define SISTERHL2030_HALFTONE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -30,6 +31,15 @@ uint8_t device_k_to_toner(uint8_t k);
 // either dimension is < 2. `toner` is resized to the new width*height.
 void box_downsample_2x(std::vector<uint8_t>& toner, unsigned& width,
                        unsigned& height);
+
+// Double width and height by nearest-neighbour (Fine 600→1200). HQ1200
+// rasters are twice the 600 dpi paperinf size; a 600 dpi bitmap with
+// RAS1200MODE prints at half size.
+void nn_upsample_2x(std::vector<uint8_t>& toner, unsigned& width,
+                    unsigned& height);
+
+// Multiply each toner sample by `gain` (1 = unchanged, >1 darker, <1 lighter).
+void scale_coverage(uint8_t* toner, size_t n, float gain);
 
 }  // namespace sisterhl2030
 

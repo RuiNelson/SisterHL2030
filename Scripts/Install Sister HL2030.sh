@@ -149,28 +149,27 @@ if [[ "$ipp_ready" -ne 1 ]]; then
   echo "If the printer does not show up, run this installer again."
 fi
 
-echo "Creating the CUPS queue as an IPP Everywhere printer (no PPD)…"
-# -m everywhere is what makes this a real queue: CUPS asks the printer
-# application for its capabilities and builds a driver from them. Without it
-# the queue is raw, has no PPD, and System Settings does not list it at all.
-if /usr/sbin/lpadmin -p "$queue" \
-  -v "ipp://localhost:8631/ipp/print" \
-  -m everywhere \
-  -E \
-  -D "Brother HL-2030 series" \
-  -L "SisterHL2030" \
-  -o printer-is-shared=false; then
+echo "Creating the CUPS queue…"
+# IPP Everywhere so System Settings lists it, then the PPD is rewritten
+# with Apple's Quality mapping (Normal = 600 dpi, not 300). The privileged
+# installer already ran this; running it again is idempotent.
+if [[ ! -f "/etc/cups/ppd/${queue}.ppd" ]] ||
+   ! grep -q 'cupsInteger1 4 /HWResolution\[600 600\]' \
+        "/etc/cups/ppd/${queue}.ppd" 2>/dev/null; then
+  run_as_admin "$SCRIPT_DIR/_privileged-create-queue.sh" \
+    "SisterHL2030 needs permission to create the print queue." \
+    "$queue" || true
+fi
+if [[ -f "/etc/cups/ppd/${queue}.ppd" ]]; then
   /usr/sbin/cupsenable "$queue" 2>/dev/null || true
   /usr/sbin/cupsaccept "$queue" 2>/dev/null || true
   /usr/bin/lpoptions -d "$queue" 2>/dev/null || true
-  # Re-assert it separately: a queue CUPS shares is advertised back on
-  # Bonjour, and a dnssd:// URI can then resolve into that copy of itself.
   /usr/sbin/lpadmin -p "$queue" -o printer-is-shared=false 2>/dev/null || true
   echo "${c_green}Queue \"${queue}\" points at ipp://localhost:8631/ipp/print${c_reset}"
 else
   echo "${c_yellow}Could not create the queue automatically.${c_reset}"
   echo "In System Settings → Printers, add an IPP printer with the address"
-  echo "ipp://localhost:8631/ipp/print and the \"IPP Everywhere\" driver."
+  echo "ipp://localhost:8631/ipp/print (AirPrint / IPP Everywhere)."
 fi
 remove_duplicate_sister_queues "$queue"
 
@@ -195,7 +194,9 @@ echo
 echo "Printer application: $SISTER_APP"
 if [[ -x "$SISTER_APP" ]]; then
   echo "        $(file -b "$SISTER_APP")"
+  echo "        version $("$SISTER_APP" --version 2>/dev/null || echo unknown)"
 fi
+echo "To confirm this copy is the one running:  Scripts/Check Sister HL2030.sh"
 echo
 echo "To test it: open a page in Preview and print to"
 echo "\"Brother HL-2030 series\"."

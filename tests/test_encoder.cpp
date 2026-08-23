@@ -124,6 +124,24 @@ int main() {
       expect(w == 2 && h == 2, "2x2 downsample halves both axes");
       expect(block.size() == 4 && block[0] == 100, "2x2 box of 100 stays 100");
     }
+    {
+      unsigned w = 2;
+      unsigned h = 2;
+      std::vector<uint8_t> block{10, 20, 30, 40};
+      sisterhl2030::nn_upsample_2x(block, w, h);
+      expect(w == 4 && h == 4, "nearest upsample doubles both axes");
+      expect(block.size() == 16 && block[0] == 10 && block[1] == 10 &&
+                 block[4] == 10 && block[5] == 10,
+             "2x2 of 10 expands to a 2x2 block of 10");
+      expect(block[2] == 20 && block[15] == 40, "upsample keeps other corners");
+    }
+    {
+      uint8_t v[2] = {100, 200};
+      sisterhl2030::scale_coverage(v, 2, 1.0f);
+      expect(v[0] == 100 && v[1] == 200, "gain 1 leaves toner unchanged");
+      sisterhl2030::scale_coverage(v, 2, 1.5f);
+      expect(v[0] == 150 && v[1] == 255, "gain >1 darkens and clamps");
+    }
   }
 
   // White line compresses to a single 0xFF.

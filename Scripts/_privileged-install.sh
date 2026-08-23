@@ -44,11 +44,18 @@ set +e
   fi
 
   mkdir -p "$DEST/spool" /Library/Logs
+  ver="$("$APP" --version 2>/dev/null || true)"
   cp "$APP" "$DEST/sister-printer-app"
   chmod 755 "$DEST/sister-printer-app"
+  codesign --force --sign - "$DEST/sister-printer-app"
   if [[ -x "$STATUS_BIN" ]]; then
     cp "$STATUS_BIN" "$DEST/sister-status"
     chmod 755 "$DEST/sister-status"
+    codesign --force --sign - "$DEST/sister-status"
+  fi
+  if [[ -n "$ver" ]]; then
+    printf '%s\n' "$ver" > "$DEST/VERSION"
+    echo "Installed driver $ver"
   fi
   chmod 700 "$DEST/spool"
   /bin/bash "$ROOT/Scripts/_privileged-icon.sh" "$ROOT"
@@ -117,6 +124,11 @@ set +e
   /usr/bin/file "$DEST/sister-printer-app"
   rm -f /etc/cups/ppd/localhost.ppd /etc/cups/ppd/HL_2030.ppd
   launchctl kickstart -k system/org.cups.cupsd 2>/dev/null || true
+
+  # Apple's ipp2ppd, not `lpadmin -m everywhere`: the everywhere PPD maps
+  # Normal quality to 300 dpi and the page prints at half size.
+  /bin/bash "$ROOT/Scripts/_privileged-create-queue.sh" "$QUEUE"
+
   echo "SisterHL2030 installed (PAPPL printer application on port 8631)."
 ) >"$LOG" 2>&1
 status=$?

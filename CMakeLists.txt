@@ -1,5 +1,33 @@
 cmake_minimum_required(VERSION 3.20)
-project(sisterhl2030 VERSION 0.1.0 LANGUAGES CXX)
+# Bump this when shipping a user-visible driver change. The git sha is
+# appended automatically so an install can be matched to a exact build.
+project(sisterhl2030 VERSION 1.1.0 LANGUAGES CXX)
+
+set(SISTER_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+set(_sister_git_head "${CMAKE_SOURCE_DIR}/.git/HEAD")
+set(_sister_ver_deps
+  "${CMAKE_SOURCE_DIR}/cmake/write_version.cmake"
+  "${CMAKE_SOURCE_DIR}/CMakeLists.txt")
+if(EXISTS "${_sister_git_head}")
+  list(APPEND _sister_ver_deps "${_sister_git_head}")
+endif()
+add_custom_command(
+  OUTPUT "${SISTER_GENERATED_DIR}/version.h"
+  COMMAND ${CMAKE_COMMAND}
+    -DSISTER_VERSION=${PROJECT_VERSION}
+    -DSISTER_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DSISTER_OUTPUT=${SISTER_GENERATED_DIR}/version.h
+    -P ${CMAKE_SOURCE_DIR}/cmake/write_version.cmake
+  DEPENDS ${_sister_ver_deps}
+  COMMENT "Writing driver version header"
+)
+# So the first compile after a fresh configure does not race the header.
+execute_process(
+  COMMAND ${CMAKE_COMMAND}
+    -DSISTER_VERSION=${PROJECT_VERSION}
+    -DSISTER_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DSISTER_OUTPUT=${SISTER_GENERATED_DIR}/version.h
+    -P ${CMAKE_SOURCE_DIR}/cmake/write_version.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,8 +70,9 @@ if(APPLE)
   add_executable(sister-status
     src/tools/sister_status.cpp
     src/status/usb_printer.cc
+    ${SISTER_GENERATED_DIR}/version.h
   )
-  target_include_directories(sister-status PRIVATE src)
+  target_include_directories(sister-status PRIVATE src ${SISTER_GENERATED_DIR})
   target_link_libraries(sister-status PRIVATE sisterhl2030_status
     "-framework IOKit" "-framework CoreFoundation")
   target_compile_options(sister-status PRIVATE
@@ -105,8 +134,11 @@ if(SISTER_WITH_PAPPL)
     OUTPUT_VARIABLE PAPPL_LINK_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE
     COMMAND_ERROR_IS_FATAL ANY)
 
-  add_executable(sister-printer-app src/pappl/sister_app.cpp)
-  target_include_directories(sister-printer-app PRIVATE src ${PAPPL_PREFIX}/include)
+  add_executable(sister-printer-app
+    src/pappl/sister_app.cpp
+    ${SISTER_GENERATED_DIR}/version.h)
+  target_include_directories(sister-printer-app PRIVATE src ${PAPPL_PREFIX}/include
+                                                         ${SISTER_GENERATED_DIR})
   target_link_libraries(sister-printer-app PRIVATE sisterhl2030_encoder
                                                      sisterhl2030_status)
   set_target_properties(sister-printer-app PROPERTIES LINK_FLAGS "${PAPPL_LINK_FLAGS}")
@@ -124,6 +156,15 @@ target_link_libraries(test_status PRIVATE sisterhl2030_status)
 enable_testing()
 add_test(NAME encoder COMMAND test_encoder)
 add_test(NAME status COMMAND test_status)
+if(SISTER_WITH_PAPPL)
+  add_test(NAME pappl_features
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_pappl_features.py)
+  set_tests_properties(pappl_features PROPERTIES TIMEOUT 120)
+  add_test(NAME driver_version
+    COMMAND ${CMAKE_BINARY_DIR}/sister-printer-app --version)
+  set_tests_properties(driver_version PROPERTIES
+    PASS_REGULAR_EXPRESSION "^${PROJECT_VERSION}\\+")
+endif()
 
 # No PPD is installed: the queue is IPP Everywhere, and the installer deletes
 # any classic PPD left by earlier versions. ppd/Sister-HL-2030.ppd is kept in

@@ -89,6 +89,40 @@ void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed) {
   }
 }
 
+void nn_upsample_2x(std::vector<uint8_t>& toner, unsigned& width,
+                    unsigned& height) {
+  if (width == 0 || height == 0) {
+    return;
+  }
+  const unsigned nw = width * 2;
+  const unsigned nh = height * 2;
+  std::vector<uint8_t> out(static_cast<size_t>(nw) * nh);
+  for (unsigned y = 0; y < height; ++y) {
+    const uint8_t* src = toner.data() + static_cast<size_t>(y) * width;
+    uint8_t* dst0 = out.data() + static_cast<size_t>(2 * y) * nw;
+    uint8_t* dst1 = dst0 + nw;
+    for (unsigned x = 0; x < width; ++x) {
+      const uint8_t v = src[x];
+      dst0[2 * x] = dst0[2 * x + 1] = v;
+      dst1[2 * x] = dst1[2 * x + 1] = v;
+    }
+  }
+  toner.swap(out);
+  width = nw;
+  height = nh;
+}
+
+void scale_coverage(uint8_t* toner, size_t n, float gain) {
+  if (!toner || gain == 1.0f) {
+    return;
+  }
+  for (size_t i = 0; i < n; ++i) {
+    const int v =
+        static_cast<int>(std::lround(static_cast<float>(toner[i]) * gain));
+    toner[i] = static_cast<uint8_t>(std::clamp(v, 0, 255));
+  }
+}
+
 void box_downsample_2x(std::vector<uint8_t>& toner, unsigned& width,
                        unsigned& height) {
   if (width < 2 || height < 2) {

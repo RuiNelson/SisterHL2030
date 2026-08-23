@@ -25,6 +25,7 @@
 #include "encoder/halftone.h"
 #include "encoder/job.h"
 #include "status/pjl.h"
+#include "version.h"
 
 namespace {
 
@@ -51,6 +52,7 @@ struct JobState {
   unsigned width = 0;
   unsigned height = 0;
   unsigned lines_seen = 0;
+  int raster_dpi = 600;
 };
 
 // The old CUPS path never converted colour itself: macOS handed the filter a
@@ -107,8 +109,21 @@ std::string pjl_mediatype(const char* pwg_type) {
   return "REGULAR";  // "stationery", "auto", "other"
 }
 
+int raster_dpi_of(const pappl_pr_options_t* options) {
+  if (options->printer_resolution[0] > 0) {
+    return options->printer_resolution[0];
+  }
+  if (options->header.HWResolution[0] > 0) {
+    return static_cast<int>(options->header.HWResolution[0]);
+  }
+  return 600;
+}
+
 // Quality maps the same way as the CUPS filter: see docs/protocol.md.
-void quality_to_params(ipp_quality_t quality, sisterhl2030::PageParams* params) {
+// raster_dpi is the bitmap the client actually sent. PJL RESOLUTION must
+// match it: a 300 dpi page with RESOLUTION=600 prints at half size.
+void quality_to_params(ipp_quality_t quality, int raster_dpi,
+                       sisterhl2030::PageParams* params) {
   switch (quality) {
     case IPP_QUALITY_DRAFT:
       params->resolution = 300;
@@ -123,6 +138,53 @@ void quality_to_params(ipp_quality_t quality, sisterhl2030::PageParams* params) 
       params->economode = true;
       break;
   }
+  if (raster_dpi > 0 && raster_dpi < 450 && params->resolution >= 600) {
+    params->resolution = 300;
+  }
+}
+
+// Convert one PAPPL raster line to toner 0..255. 8-bit sGray from macOS is
+// ColorSync-linearised already, so it uses the laser curve as-is. PAPPL's
+// own sRGB raster (JPEG/PNG submitted to the app) does not, and gets the
+// extra 0.85 calibration so the two paths land on the same coverage.
+void line_to_toner(const cups_page_header2_t& header, const unsigned char* line,
+                   unsigned width, uint8_t* row) {
+  const unsigned bpp = header.cupsBitsPerPixel;
+  const cups_cspace_t cs =
+      static_cast<cups_cspace_t>(header.cupsColorSpace);
+
+  if (bpp == 1) {
+    // DeviceW/sGray 1-bit is 1 = white; DeviceK is 1 = black.
+    const bool invert =
+        cs == CUPS_CSPACE_W || cs == CUPS_CSPACE_SW || cs == CUPS_CSPACE_WHITE;
+    for (unsigned x = 0; x < width; ++x) {
+      const bool on =
+          (line[x / 8] & static_cast<uint8_t>(0x80 >> (x % 8))) != 0;
+      row[x] = (on != invert) ? 255 : 0;
+    }
+    return;
+  }
+
+  if (bpp >= 24) {
+    const unsigned stride = bpp / 8;
+    const std::array<uint8_t, 256>& tone = tone_curve();
+    for (unsigned x = 0; x < width; ++x) {
+      const unsigned char* px = line + static_cast<size_t>(x) * stride;
+      row[x] = tone[sisterhl2030::rgb_to_toner(px[0], px[1], px[2])];
+    }
+    return;
+  }
+
+  const unsigned stride = bpp >= 8 ? bpp / 8 : 1;
+  if (cs == CUPS_CSPACE_K) {
+    for (unsigned x = 0; x < width; ++x) {
+      row[x] = sisterhl2030::device_k_to_toner(line[x * stride]);
+    }
+  } else {
+    for (unsigned x = 0; x < width; ++x) {
+      row[x] = sisterhl2030::device_gray_to_toner(line[x * stride]);
+    }
+  }
 }
 
 // Raw passthrough: the file is already a HL-2030 job stream, as produced by
@@ -131,6 +193,12 @@ void quality_to_params(ipp_quality_t quality, sisterhl2030::PageParams* params) 
 bool printfile(pappl_job_t* job, pappl_pr_options_t* options,
                pappl_device_t* device) {
   (void)options;
+  const char* name = papplJobGetName(job);
+  if (name && std::strcmp(name, kStatusJobName) == 0) {
+    papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+                "Status-only job: nothing will be printed.");
+    return true;
+  }
   const char* filename = papplJobGetFilename(job);
   if (!filename) {
     papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "No job file to print.");
@@ -209,7 +277,8 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
     return false;
   }
 
-  quality_to_params(options->print_quality, &state->params);
+  state->raster_dpi = raster_dpi_of(options);
+  quality_to_params(options->print_quality, state->raster_dpi, &state->params);
   state->params.copies = options->copies > 0 ? options->copies : 1;
   state->params.papersize = pjl_paper(options->media.size_name);
   state->params.mediatype = pjl_mediatype(options->media.type);
@@ -217,10 +286,12 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
   // 0 = paper white; rwriteline fills in the real toner values.
   state->lines_seen = 0;
   papplLogJob(job, PAPPL_LOGLEVEL_INFO,
-              "Raster page %ux%u, %u bytes/line, %u bits/pixel.",
+              "Raster page %ux%u, %u bytes/line, %u bits/pixel, "
+              "quality=%d, %d dpi.",
               options->header.cupsWidth, options->header.cupsHeight,
               options->header.cupsBytesPerLine,
-              options->header.cupsBitsPerPixel);
+              options->header.cupsBitsPerPixel,
+              static_cast<int>(options->print_quality), state->raster_dpi);
   state->toner.assign(static_cast<size_t>(state->width) * state->height, 0);
   return true;
 }
@@ -234,28 +305,13 @@ bool rwriteline(pappl_job_t* job, pappl_pr_options_t* options,
 
   ++state->lines_seen;
   uint8_t* row = state->toner.data() + static_cast<size_t>(y) * state->width;
-
-  // PAPPL 1.4 never converts RGB to grey: for an 8-bit grey raster it copies
-  // bytes straight out of its 3-byte RGB buffer, so "grey" is really the red
-  // channel and any saturated colour collapses to black or white. Ask for
-  // sRGB instead and do the luma ourselves.
-  const std::array<uint8_t, 256>& tone = tone_curve();
-  if (options->header.cupsBitsPerPixel >= 24) {
-    for (unsigned x = 0; x < state->width; ++x) {
-      const unsigned char* px = line + static_cast<size_t>(x) * 3;
-      row[x] = tone[sisterhl2030::rgb_to_toner(px[0], px[1], px[2])];
-    }
-  } else {
-    for (unsigned x = 0; x < state->width; ++x) {
-      row[x] = tone[sisterhl2030::device_gray_to_toner(line[x])];
-    }
-  }
-
+  line_to_toner(options->header, line, state->width, row);
   return true;
 }
 
 bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
               pappl_device_t* device, unsigned page) {
+  (void)options;
   (void)device;
   (void)page;
   auto* state = static_cast<JobState*>(papplJobGetData(job));
@@ -265,11 +321,26 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   unsigned width = state->width;
   unsigned height = state->height;
 
-  // Draft prints at 300 dpi; the raster arrives at the advertised resolution.
-  if (state->params.resolution == 300 &&
-      options->printer_resolution[0] >= 450) {
+  // Draft is 300 dpi. If the client already sent 300 dpi (Apple's ipp2ppd
+  // mapping), leave it; if it sent 600, box-filter down.
+  if (state->params.resolution == 300 && state->raster_dpi >= 450) {
     sisterhl2030::box_downsample_2x(state->toner, width, height);
+  } else if (state->params.resolution == 1200 && state->raster_dpi < 900) {
+    // HQ1200 pixel grid is twice 600 dpi. RAS1200MODE + a 600 dpi bitmap
+    // prints at half size.
+    sisterhl2030::nn_upsample_2x(state->toner, width, height);
   }
+
+  // Same scene at 300 dpi + ECONOMODE looks balanced; 600 dpi + ECONOMODE
+  // is too light (less dot gain and toner save stack); 1200 dpi with
+  // ECONOMODE off is too heavy. Re-aim coverage at the draft look.
+  float gain = 1.0f;
+  if (state->params.resolution == 600) {
+    gain = 1.28f;
+  } else if (state->params.resolution == 1200) {
+    gain = 0.82f;
+  }
+  sisterhl2030::scale_coverage(state->toner.data(), state->toner.size(), gain);
 
   // How much tone did we actually receive? If PAPPL already reduced the page
   // to black and white there is nothing for error diffusion to spread.
@@ -459,11 +530,10 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
   driver_data->has_supplies = true;
   driver_data->format = "application/octet-stream";
 
-  // Always take 8-bit gray and dither it ourselves: Atkinson here
-  // beats handing the printer a pre-thresholded bitmap.
-  driver_data->raster_types = PAPPL_PWG_RASTER_TYPE_BLACK_1 |
-                              PAPPL_PWG_RASTER_TYPE_SGRAY_8 |
-                              PAPPL_PWG_RASTER_TYPE_SRGB_8;
+  // 8-bit only. black_1 makes PAPPL (and some clients) threshold with a
+  // clustered-dot screen, and Atkinson then has nothing to spread.
+  driver_data->raster_types =
+      PAPPL_PWG_RASTER_TYPE_SGRAY_8 | PAPPL_PWG_RASTER_TYPE_SRGB_8;
 
   // The printer is mono, but PAPPL only hands over sRGB when the colour mode
   // is "color" -- and sRGB is the only form in which colour survives the trip
@@ -486,6 +556,9 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
     }
   }
 
+  // Advertise both so Apple's ipp2ppd maps Quality Draft → 300 dpi and
+  // Normal/High → 600 dpi. CUPS's generic "everywhere" PPD maps them
+  // wrongly (Normal → 300); the installer therefore uses ipp2ppd.
   driver_data->num_resolution = 2;
   driver_data->x_resolution[0] = driver_data->y_resolution[0] = 300;
   driver_data->x_resolution[1] = driver_data->y_resolution[1] = 600;
@@ -534,6 +607,12 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  if (argc >= 2 && (!std::strcmp(argv[1], "--version") ||
+                    !std::strcmp(argv[1], "version"))) {
+    std::puts(SISTER_VERSION_FULL);
+    return 0;
+  }
+
   static pappl_pr_driver_t drivers[] = {
       {kDriverName, kDriverDesc, kDeviceId, nullptr},
   };
@@ -541,11 +620,13 @@ int main(int argc, char* argv[]) {
   // The footer is not optional: PAPPL passes it to a string compare when it
   // renders any web page, and a null one segfaults the daemon.
   static const char* kFooter =
-      "Copyright &copy; 2026 Rui Nelson. "
+      "SisterHL2030 " SISTER_VERSION_FULL
+      ". Copyright &copy; 2026 Rui Nelson. "
       "<a href=\"https://github.com/RuiNelson/SisterHL2030\">SisterHL2030</a> "
       "is free software under the GNU GPL v2 or later.";
 
-  return papplMainloop(argc, argv, "1.0", kFooter,
+  std::fprintf(stderr, "SisterHL2030 %s\n", SISTER_VERSION_FULL);
+  return papplMainloop(argc, argv, SISTER_VERSION, kFooter,
                        static_cast<int>(sizeof(drivers) / sizeof(drivers[0])),
                        drivers, nullptr, driver_cb, nullptr, nullptr, nullptr,
                        nullptr, nullptr);

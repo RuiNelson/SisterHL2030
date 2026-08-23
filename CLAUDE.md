@@ -34,6 +34,13 @@ Run one by name with `ctest --test-dir build -R status --output-on-failure`.
 `sister-status` and its `-framework IOKit` link are guarded by `if(APPLE)`; the
 encoder library, `sister-rawtobr`, and both tests build anywhere.
 
+The driver version is `project(sisterhl2030 VERSION …)` in `CMakeLists.txt`
+plus the git sha (`1.1.0+abc1234def56`). Bump the CMake version when shipping
+a user-visible driver change. `sister-printer-app --version` prints the full
+string; PAPPL advertises the semver half as `printer-firmware-string-version`.
+`Scripts/Check Sister HL2030.sh` compares the build, the install, and the
+running daemon.
+
 ## Runtime architecture
 
 The driver is a PAPPL printer application. It owns the USB device end to end:
@@ -97,6 +104,11 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
 - `papplPrinterCreate` reports every `EINVAL` as "Printer names must start with
   a letter or underscore". Read the server log for the real reason.
 - Declaring a raw `format` obliges you to set `printfile_cb`.
+- Never advertise `black_1`. PAPPL (and some clients) then threshold with a
+  clustered-dot screen, and Atkinson has nothing to spread. 8-bit sGray/sRGB
+  only; we dither.
+- PJL `RESOLUTION` must match the bitmap dpi. A 300 dpi raster with
+  `RESOLUTION = 600` prints at half size — that is the 100%-scale bug.
 
 ## Source layout
 
@@ -146,6 +158,8 @@ into the live install — no daemon restart needed, both are exec'd per job:
 cmake --build build -j && sudo bash Scripts/_privileged-update-filter.sh "$PWD"
 ```
 
+macOS Tahoe kills an unsigned binary under `/Library/Printers` (`OS_REASON_CODESIGNING`). The privileged scripts ad-hoc sign after copy (`codesign --force --sign -`). Confirm with `Scripts/Check Sister HL2030.sh`.
+
 Changes to the `launchd/*.plist` files, or anything that must restart the
 daemon, need a reload:
 
@@ -182,10 +196,19 @@ output is English whatever the user's locale is.
   by `CMakeLists.txt`; the installer also deletes copies left by earlier
   versions so CUPS cannot pick the legacy PPD path. Advertised attributes come
   from `driver_cb()` in `sister_app.cpp` — change them there, not in the PPD.
-- The queue **must** be created with `lpadmin -m everywhere`. Without it CUPS
-  makes a raw queue with no PPD, and System Settings shows no printer at all —
-  the daemon and the IPP printer can be perfectly healthy while the user sees
-  nothing. Check with `ls /etc/cups/ppd/`: a working queue has a PPD there.
+- The CUPS queue must be an **AirPrint PPD** (`lpadmin -P` of Apple's
+  ipp2ppd output), not `lpadmin -m everywhere`. Everywhere makes System
+  Settings list the printer, but on macOS Tahoe its print dialog has no
+  Quality control, and its PPD maps Normal to 300 dpi (half-size pages).
+  ipp2ppd maps Draft=300 + `print-quality=3`, Normal=600 + 4, High=600 + 5
+  (HQ1200). It only emits the Fine `APPrinterPreset` when High uses a
+  different resolution than Normal; ours does not, so
+  `_privileged-create-queue.sh` adds `Black and White - Fine` itself.
+  Tahoe's Quality popup is those three presets
+  (`com.apple.print.preset.quality` draft/mid/high), not the OpenUI
+  `cupsPrintQuality` keyword. CUPS may warn that PPDs are deprecated;
+  every AirPrint printer on macOS is this path. Check MakeModel is
+  `…-AirPrint`, not `…- IPP Everywhere`.
 - Only one CUPS queue should exist, and it must stay on `ipp://localhost:8631`
   with `printer-is-shared=false`. `remove_duplicate_sister_queues` in
   `_common.sh` prunes the extras Bonjour/AirPrint discovery creates — its glob

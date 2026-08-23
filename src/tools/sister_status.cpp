@@ -17,6 +17,7 @@
 
 #include "status/pjl.h"
 #include "status/usb_printer.h"
+#include "version.h"
 
 namespace {
 
@@ -177,6 +178,9 @@ int main(int argc, char** argv) {
       mode = Mode::publish;
     } else if (a == "--loop") {
       loop = true;
+    } else if (a == "--version" || a == "version") {
+      std::puts(SISTER_VERSION_FULL);
+      return 0;
     } else if (a == "-h" || a == "--help") {
       usage();
       return 0;
