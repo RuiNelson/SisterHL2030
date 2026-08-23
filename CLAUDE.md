@@ -172,6 +172,10 @@ output is English whatever the user's locale is.
   by `CMakeLists.txt`; the installer also deletes copies left by earlier
   versions so CUPS cannot pick the legacy PPD path. Advertised attributes come
   from `driver_cb()` in `sister_app.cpp` — change them there, not in the PPD.
+- The queue **must** be created with `lpadmin -m everywhere`. Without it CUPS
+  makes a raw queue with no PPD, and System Settings shows no printer at all —
+  the daemon and the IPP printer can be perfectly healthy while the user sees
+  nothing. Check with `ls /etc/cups/ppd/`: a working queue has a PPD there.
 - Only one CUPS queue should exist, and it must stay on `ipp://localhost:8631`
   with `printer-is-shared=false`. `remove_duplicate_sister_queues` in
   `_common.sh` prunes the extras Bonjour/AirPrint discovery creates — its glob

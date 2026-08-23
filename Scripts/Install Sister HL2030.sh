@@ -150,15 +150,19 @@ if [[ "$ipp_ready" -ne 1 ]]; then
 fi
 
 echo "Creating the CUPS queue as an IPP Everywhere printer (no PPD)…"
+# -m everywhere is what makes this a real queue: CUPS asks the printer
+# application for its capabilities and builds a driver from them. Without it
+# the queue is raw, has no PPD, and System Settings does not list it at all.
 if /usr/sbin/lpadmin -p "$queue" \
   -v "ipp://localhost:8631/ipp/print" \
+  -m everywhere \
   -E \
   -D "Brother HL-2030 series" \
   -L "SisterHL2030" \
   -o printer-is-shared=false; then
   /usr/sbin/cupsenable "$queue" 2>/dev/null || true
   /usr/sbin/cupsaccept "$queue" 2>/dev/null || true
-  /usr/sbin/lpoptions -d "$queue" 2>/dev/null || true
+  /usr/bin/lpoptions -d "$queue" 2>/dev/null || true
   # Re-assert it separately: a queue CUPS shares is advertised back on
   # Bonjour, and a dnssd:// URI can then resolve into that copy of itself.
   /usr/sbin/lpadmin -p "$queue" -o printer-is-shared=false 2>/dev/null || true
@@ -166,7 +170,7 @@ if /usr/sbin/lpadmin -p "$queue" \
 else
   echo "${c_yellow}Could not create the queue automatically.${c_reset}"
   echo "In System Settings → Printers, add an IPP printer with the address"
-  echo "ipp://localhost:8631/ipp/print."
+  echo "ipp://localhost:8631/ipp/print and the \"IPP Everywhere\" driver."
 fi
 remove_duplicate_sister_queues "$queue"
 
