@@ -37,7 +37,7 @@ Run one by name with `ctest --test-dir build -R status --output-on-failure`.
 encoder library, `sister-rawtobr`, and both tests build anywhere.
 
 The driver version is `project(sisterhl2030 VERSION …)` in `CMakeLists.txt`
-plus the git sha (`0.9.0+abc1234def56`). Bump the CMake version when shipping
+plus the git sha (`0.9.1+abc1234def56`). Bump the CMake version when shipping
 a user-visible driver change. `sister-printer-app --version` prints the full
 string; PAPPL advertises the semver half as `printer-firmware-string-version`.
 `Scripts/Check Sister HL2030.sh` compares the build, the install, and the
@@ -50,7 +50,7 @@ beta. To cut a release: bump `project(sisterhl2030 VERSION …)` in
 `CMakeLists.txt`, update this file if the example version string above is
 now stale, rebuild the three packages with
 `Scripts/build_distribution_packages.sh`, commit, then tag the commit
-`vMAJOR.MINOR.PATCH` (e.g. `v0.9.0`) with `git tag`. The tag is what
+`vMAJOR.MINOR.PATCH` (e.g. `v0.9.1`) with `git tag`. The tag is what
 `gh release create` attaches the three `.pkg` files from `distrib/` to.
 Release notes are user-facing only — what changed for someone printing to
 the HL-2030, in short bullet-point prose — never internal detail like
