@@ -94,6 +94,10 @@ The installer **refuses to continue** if it still finds the official
 Brother drivers, so they cannot be stacked. macOS will ask for an
 administrator password on each step.
 
+To remove SisterHL2030 again, run `Scripts/Uninstall Sister HL2030.sh`. It
+takes out the printer application, its background service, its saved printer
+state and any queue pointing at it.
+
 The queue is created as **IPP Everywhere** (`ipp://127.0.0.1:8631/ipp/print`)
 talking to the SisterHL2030 [PAPPL](https://github.com/michaelrsweet/pappl)
 printer application, which runs as a LaunchDaemon. That is the replacement

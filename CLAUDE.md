@@ -144,8 +144,9 @@ sudo bash Scripts/_privileged-restart-ipp.sh "$PWD"
 ```
 
 `Scripts/*.sh` without the `_privileged-` prefix are the novice-facing entry
-points (`Install Sister HL2030.sh`, `Uninstall Official Brother Drivers.sh`,
-`Preview Halftone.sh`); they source `_common.sh` and escalate through
+points (`Install Sister HL2030.sh`, `Uninstall Sister HL2030.sh`,
+`Uninstall Official Brother Drivers.sh`, `Preview Halftone.sh`,
+`Preview PAPPL Render.sh`); they source `_common.sh` and escalate through
 `osascript … with administrator privileges`. Install refuses to proceed while
 the official Intel Brother package is present, so the two filters can never
 stack.
