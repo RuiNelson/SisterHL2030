@@ -80,10 +80,10 @@ if(APPLE)
   )
 endif()
 
-# PAPPL printer application (opt-in while the ippeveprinter façade is still
-# the shipping path). PAPPL is not packaged for Homebrew, so we fetch a pinned
-# release and build it at configure time -- that way pkg-config can report the
-# link line, which carries absolute Homebrew paths and -framework flags.
+# PAPPL printer application (the shipping driver). PAPPL is not packaged for
+# Homebrew, so we fetch a pinned release and build it at configure time -- that
+# way pkg-config can report the link line, which carries absolute Homebrew
+# paths and -framework flags.
 option(SISTER_WITH_PAPPL "Build the PAPPL printer application" OFF)
 
 if(SISTER_WITH_PAPPL)
@@ -166,9 +166,9 @@ if(SISTER_WITH_PAPPL)
     PASS_REGULAR_EXPRESSION "^${PROJECT_VERSION}\\+")
 endif()
 
-# No PPD is installed: the queue is IPP Everywhere, and the installer deletes
-# any classic PPD left by earlier versions. ppd/Sister-HL-2030.ppd is kept in
-# the tree as a reference for the PJL/PCL options only.
+# No classic PPD is shipped: the queue is created from Apple's ipp2ppd, and
+# the installer deletes any Sister PPD left by earlier versions. Advertised
+# attributes live in driver_cb() in src/pappl/sister_app.cpp.
 # What an install consists of: the printer application and the status CLI.
 # rastertosisterhl2030 is deliberately not installed -- the classic CUPS filter
 # path is retired, and the binary is kept only as an encoder reference.

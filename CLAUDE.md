@@ -218,10 +218,9 @@ output is English whatever the user's locale is.
   margin reads as borderless and the print dialog then silently scale-to-fits
   at ~96%. `scaling_default` is `PAPPL_SCALING_NONE` for the same reason —
   together they are the README's "defaults to 100% scale".
-- `ppd/Sister-HL-2030.ppd` is historical and is deliberately **not** installed
-  by `CMakeLists.txt`; the installer also deletes copies left by earlier
-  versions so CUPS cannot pick the legacy PPD path. Advertised attributes come
-  from `driver_cb()` in `sister_app.cpp` — change them there, not in the PPD.
+- No classic Sister PPD is shipped. The installer deletes copies left by
+  earlier versions so CUPS cannot pick the legacy PPD path. Advertised
+  attributes come from `driver_cb()` in `sister_app.cpp` — change them there.
 - The CUPS queue must be an **AirPrint PPD** (`lpadmin -P` of Apple's
   ipp2ppd output), not `lpadmin -m everywhere`. Everywhere makes System
   Settings list the printer, but on macOS Tahoe its print dialog has no
