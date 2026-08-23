@@ -17,10 +17,15 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
+
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+#endif
 
 #include "encoder/halftone.h"
 #include "encoder/job.h"
@@ -388,6 +393,11 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   state->job->encode_page(state->params, static_cast<int>(height),
                           static_cast<int>(bpl), next_line);
   fflush(state->stream);
+  // Drop the page buffer now: HQ1200's upsampled toner is ~140 MB, and the
+  // next rstartpage reallocates. Leaving it until rendjob keeps that RAM
+  // for the rest of the job and for idle if the client stalls.
+  state->toner.clear();
+  state->toner.shrink_to_fit();
   return true;
 }
 
@@ -411,6 +421,11 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
   papplDeviceFlush(device);
   papplJobSetData(job, nullptr);
   delete state;
+#ifdef __APPLE__
+  // After a page the malloc zone still holds the toner/Atkinson arenas
+  // (~175 MB peak). Hand them back so idle RSS is idle RSS.
+  malloc_zone_pressure_relief(nullptr, 0);
+#endif
   return true;
 }
 
@@ -621,6 +636,59 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
   return true;
 }
 
+// Lean system object for a single USB printer that sits idle most of the
+// day. PAPPL's default is multi-queue + TLS, which mints a self-signed
+// cert and keeps extra printer-list state even when nothing is printing.
+pappl_system_t* make_system(int num_options, cups_option_t* options,
+                            void* data) {
+  (void)data;
+  const char* directory = cupsGetOption("spool-directory", num_options, options);
+  const char* logfile = cupsGetOption("log-file", num_options, options);
+  const char* server_hostname =
+      cupsGetOption("server-hostname", num_options, options);
+  const char* value = cupsGetOption("log-level", num_options, options);
+  pappl_loglevel_t loglevel = PAPPL_LOGLEVEL_INFO;
+  if (value) {
+    if (!std::strcmp(value, "fatal")) {
+      loglevel = PAPPL_LOGLEVEL_FATAL;
+    } else if (!std::strcmp(value, "error")) {
+      loglevel = PAPPL_LOGLEVEL_ERROR;
+    } else if (!std::strcmp(value, "warn")) {
+      loglevel = PAPPL_LOGLEVEL_WARN;
+    } else if (!std::strcmp(value, "info")) {
+      loglevel = PAPPL_LOGLEVEL_INFO;
+    } else if (!std::strcmp(value, "debug")) {
+      loglevel = PAPPL_LOGLEVEL_DEBUG;
+    }
+  }
+  int port = 0;
+  if ((value = cupsGetOption("server-port", num_options, options)) != nullptr) {
+    port = static_cast<int>(std::strtol(value, nullptr, 10));
+  }
+
+  // MULTI_QUEUE stays on: Create-Printer (the installer's `add`) is rejected
+  // without it. NO_TLS skips the self-signed cert PAPPL would mint at boot.
+  const pappl_soptions_t soptions = PAPPL_SOPTIONS_MULTI_QUEUE |
+                                    PAPPL_SOPTIONS_WEB_INTERFACE |
+                                    PAPPL_SOPTIONS_NO_TLS;
+  pappl_system_t* system = papplSystemCreate(
+      soptions, "sister-printer-app", port, "_print,_universal", directory,
+      logfile, loglevel, nullptr, false);
+  if (!system) {
+    return nullptr;
+  }
+  if (server_hostname) {
+    papplSystemSetHostName(system, server_hostname);
+  }
+  if (!cupsGetOption("private-server", num_options, options)) {
+    papplSystemAddListeners(
+        system, cupsGetOption("listen-hostname", num_options, options));
+  }
+  papplSystemSetMaxClients(system, 16);
+  papplSystemSetMaxSubscriptions(system, 8);
+  return system;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -645,6 +713,6 @@ int main(int argc, char* argv[]) {
   std::fprintf(stderr, "SisterHL2030 %s\n", SISTER_VERSION_FULL);
   return papplMainloop(argc, argv, SISTER_VERSION, kFooter,
                        static_cast<int>(sizeof(drivers) / sizeof(drivers[0])),
-                       drivers, nullptr, driver_cb, nullptr, nullptr, nullptr,
-                       nullptr, nullptr);
+                       drivers, nullptr, driver_cb, nullptr, nullptr,
+                       make_system, nullptr, nullptr);
 }

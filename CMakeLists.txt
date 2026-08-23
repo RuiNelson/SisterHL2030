@@ -91,17 +91,40 @@ if(SISTER_WITH_PAPPL)
   set(PAPPL_SHA256 1684c4e06446e9f7d93a39729fa0ba56f07a4007560080fdad7d0e2076a3615f)
   set(PAPPL_PREFIX ${CMAKE_BINARY_DIR}/pappl)
   set(PAPPL_PC ${PAPPL_PREFIX}/lib/pkgconfig/pappl.pc)
+  # Bump when cmake/patch_pappl_idle.cmake or the configure line changes so
+  # the next cmake run rebuilds libpappl instead of reusing a fat/AppKit build.
+  set(PAPPL_STAMP_VALUE "idle-1")
+  set(PAPPL_STAMP ${PAPPL_PREFIX}/.sister-pappl-stamp)
 
-  if(NOT EXISTS ${PAPPL_PC})
+  set(_pappl_stamp_now "")
+  if(EXISTS ${PAPPL_STAMP})
+    file(READ ${PAPPL_STAMP} _pappl_stamp_now)
+    string(STRIP "${_pappl_stamp_now}" _pappl_stamp_now)
+  endif()
+
+  if(NOT _pappl_stamp_now STREQUAL PAPPL_STAMP_VALUE)
     set(_pappl_tar ${CMAKE_BINARY_DIR}/pappl-${PAPPL_VERSION}.tar.gz)
     set(_pappl_src ${CMAKE_BINARY_DIR}/pappl-${PAPPL_VERSION})
-    message(STATUS "Fetching PAPPL ${PAPPL_VERSION}")
-    file(DOWNLOAD
-      https://github.com/michaelrsweet/pappl/releases/download/v${PAPPL_VERSION}/pappl-${PAPPL_VERSION}.tar.gz
-      ${_pappl_tar}
-      EXPECTED_HASH SHA256=${PAPPL_SHA256}
-      SHOW_PROGRESS)
+    if(NOT EXISTS ${_pappl_tar})
+      message(STATUS "Fetching PAPPL ${PAPPL_VERSION}")
+      file(DOWNLOAD
+        https://github.com/michaelrsweet/pappl/releases/download/v${PAPPL_VERSION}/pappl-${PAPPL_VERSION}.tar.gz
+        ${_pappl_tar}
+        EXPECTED_HASH SHA256=${PAPPL_SHA256}
+        SHOW_PROGRESS)
+    endif()
+    # Re-extract so the idle patches land on a clean tree, not a previously
+    # patched copy.
+    file(REMOVE_RECURSE ${_pappl_src} ${PAPPL_PREFIX})
     file(ARCHIVE_EXTRACT INPUT ${_pappl_tar} DESTINATION ${CMAKE_BINARY_DIR})
+    execute_process(
+      COMMAND ${CMAKE_COMMAND}
+              -DPAPPL_SRC=${_pappl_src}
+              -P ${CMAKE_SOURCE_DIR}/cmake/patch_pappl_idle.cmake
+      RESULT_VARIABLE _pappl_patch)
+    if(NOT _pappl_patch EQUAL 0)
+      message(FATAL_ERROR "PAPPL idle patch failed")
+    endif()
     # 1.4.x builds against the CUPS 2.3 that ships with macOS; 2.x would drag
     # in libcups 3. --disable-shared keeps the app a single binary.
     execute_process(
@@ -115,6 +138,15 @@ if(SISTER_WITH_PAPPL)
       message(FATAL_ERROR "PAPPL configure failed, see pappl-configure.log")
     endif()
     execute_process(
+      COMMAND ${CMAKE_COMMAND}
+              -DPAPPL_SRC=${_pappl_src}
+              -DPAPPL_MAKEDEFS=${_pappl_src}/Makedefs
+              -P ${CMAKE_SOURCE_DIR}/cmake/patch_pappl_idle.cmake
+      RESULT_VARIABLE _pappl_mkpatch)
+    if(NOT _pappl_mkpatch EQUAL 0)
+      message(FATAL_ERROR "PAPPL Makedefs patch failed")
+    endif()
+    execute_process(
       COMMAND make -j install
       WORKING_DIRECTORY ${_pappl_src}
       RESULT_VARIABLE _pappl_make
@@ -123,6 +155,12 @@ if(SISTER_WITH_PAPPL)
     if(NOT _pappl_make EQUAL 0)
       message(FATAL_ERROR "PAPPL build failed, see pappl-build.log")
     endif()
+    # configure still writes AppKit into pappl.pc; drop it so the app does not
+    # link a UI framework the dummy status object never references.
+    file(READ ${PAPPL_PC} _pappl_pc)
+    string(REPLACE " -framework AppKit" "" _pappl_pc "${_pappl_pc}")
+    file(WRITE ${PAPPL_PC} "${_pappl_pc}")
+    file(WRITE ${PAPPL_STAMP} "${PAPPL_STAMP_VALUE}\n")
   endif()
 
   find_program(PKG_CONFIG_EXECUTABLE pkg-config REQUIRED)
@@ -133,6 +171,8 @@ if(SISTER_WITH_PAPPL)
             ${PKG_CONFIG_EXECUTABLE} --libs pappl
     OUTPUT_VARIABLE PAPPL_LINK_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE
     COMMAND_ERROR_IS_FATAL ANY)
+  string(REPLACE "-framework AppKit" "" PAPPL_LINK_FLAGS "${PAPPL_LINK_FLAGS}")
+  string(STRIP "${PAPPL_LINK_FLAGS}" PAPPL_LINK_FLAGS)
 
   add_executable(sister-printer-app
     src/pappl/sister_app.cpp
@@ -141,7 +181,8 @@ if(SISTER_WITH_PAPPL)
                                                          ${SISTER_GENERATED_DIR})
   target_link_libraries(sister-printer-app PRIVATE sisterhl2030_encoder
                                                      sisterhl2030_status)
-  set_target_properties(sister-printer-app PROPERTIES LINK_FLAGS "${PAPPL_LINK_FLAGS}")
+  set_target_properties(sister-printer-app PROPERTIES
+    LINK_FLAGS "${PAPPL_LINK_FLAGS} -Wl,-dead_strip")
   target_compile_options(sister-printer-app PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra>
   )

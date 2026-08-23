@@ -21,6 +21,8 @@
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
 	<key>StandardOutPath</key>
 	<string>/Library/Logs/SisterHL2030.log</string>
 	<key>StandardErrorPath</key>
