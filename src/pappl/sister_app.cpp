@@ -35,9 +35,15 @@ constexpr const char* kIconPath = "/Library/Printers/SisterHL2030/icon.png";
 // What AirPrint clients show. The IPP printer name cannot hold spaces, so the
 // friendly name is set separately -- the façade advertised the same string.
 constexpr const char* kDnsSdName = "Brother HL-2030";
+// A job with this name prints nothing. CUPS only copies marker-levels off the
+// printer while a job runs through its backend, so without a way to run an
+// empty one the macOS Supply Levels panel stays empty until the first real
+// print. Submitting this costs no paper.
+constexpr const char* kStatusJobName = ".sister-status";
 
 // Per-job state. PAPPL hands it back to every raster callback.
 struct JobState {
+  bool status_only = false;  // named kStatusJobName: report status, print nothing
   FILE* stream = nullptr;
   std::unique_ptr<sisterhl2030::Job> job;
   sisterhl2030::PageParams params;
@@ -166,6 +172,16 @@ bool rstartjob(pappl_job_t* job, pappl_pr_options_t* options,
                pappl_device_t* device) {
   (void)options;
   auto* state = new JobState();
+
+  const char* name = papplJobGetName(job);
+  if (name && std::strcmp(name, kStatusJobName) == 0) {
+    state->status_only = true;
+    papplJobSetData(job, state);
+    papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+                "Status-only job: nothing will be printed.");
+    return true;
+  }
+
   state->stream = funopen(device, nullptr, device_write, nullptr, nullptr);
   if (!state->stream) {
     papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "Unable to open the device stream.");
@@ -184,6 +200,7 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
   (void)page;
   auto* state = static_cast<JobState*>(papplJobGetData(job));
   if (!state) return false;
+  if (state->status_only) return true;
 
   state->width = options->header.cupsWidth;
   state->height = options->header.cupsHeight;
@@ -213,7 +230,7 @@ bool rwriteline(pappl_job_t* job, pappl_pr_options_t* options,
   (void)options;
   (void)device;
   auto* state = static_cast<JobState*>(papplJobGetData(job));
-  if (!state || y >= state->height) return true;
+  if (!state || state->status_only || y >= state->height) return true;
 
   ++state->lines_seen;
   uint8_t* row = state->toner.data() + static_cast<size_t>(y) * state->width;
@@ -243,6 +260,7 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   (void)page;
   auto* state = static_cast<JobState*>(papplJobGetData(job));
   if (!state) return false;
+  if (state->status_only) return true;
 
   unsigned width = state->width;
   unsigned height = state->height;
@@ -300,6 +318,12 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
   (void)options;
   auto* state = static_cast<JobState*>(papplJobGetData(job));
   if (!state) return false;
+
+  if (state->status_only) {
+    papplJobSetData(job, nullptr);
+    delete state;
+    return true;
+  }
 
   state->job.reset();  // writes the closing UEL
   if (state->stream) {

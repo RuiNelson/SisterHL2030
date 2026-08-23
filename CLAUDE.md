@@ -69,6 +69,16 @@ Supply Levels panel works with no extra plumbing, and it advertises
 `printer-supply-info-uri` over plain http rather than the self-signed https
 that made the façade's supplies page unreachable.
 
+CUPS is the awkward half: it copies `marker-*` off the printer only while a
+job runs through its backend, so the macOS Supply Levels panel stays empty
+until something prints. A job named `.sister-status` (`kStatusJobName`) makes
+the app report status and print nothing, which populates the queue without
+paper. The installer submits one; to refresh by hand:
+
+```bash
+lp -d Brother_HL_2030_series -t .sister-status /etc/hosts
+```
+
 Toner is a three-state sensor (OK/low/empty → 100/15/0). Drum remaining is
 `DRUMLIFE` against 12 000 rated pages. `Scripts/_fake_printer.py` answers PJL
 the way the real device does, so this path can be exercised with no hardware:

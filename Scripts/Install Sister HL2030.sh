@@ -174,6 +174,17 @@ else
 fi
 remove_duplicate_sister_queues "$queue"
 
+# CUPS only copies supply levels off the printer while a job runs through its
+# backend, so Supply Levels stays empty until the first print. This job is
+# named so the printer application reports status and prints nothing.
+if command -v lp >/dev/null 2>&1; then
+  probe="$(mktemp -t sister-status-probe)"
+  printf 'status\n' > "$probe"
+  lp -d "$queue" -t .sister-status "$probe" >/dev/null 2>&1 || true
+  sleep 3
+  rm -f "$probe"
+fi
+
 echo
 echo "${c_green}${c_bold}Sister HL-2030 installed.${c_reset}"
 echo
