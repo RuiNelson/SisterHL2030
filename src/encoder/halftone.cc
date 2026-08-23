@@ -24,6 +24,18 @@ constexpr float kShadowGamma = 1.8f;
 constexpr float kGammaBlendStart = 0.12f;
 constexpr float kGammaBlendSpan = 0.55f;
 
+float srgb_to_linear(uint8_t c) {
+  const float v = c / 255.0f;
+  return v <= 0.04045f ? v / 12.92f
+                       : std::pow((v + 0.055f) / 1.055f, 2.4f);
+}
+
+float linear_to_srgb(float y) {
+  y = std::clamp(y, 0.0f, 1.0f);
+  return y <= 0.0031308f ? y * 12.92f
+                         : 1.055f * std::pow(y, 1.0f / 2.4f) - 0.055f;
+}
+
 uint8_t coverage_from_blackness(float blackness) {
   blackness = std::clamp(blackness, 0.0f, 1.0f);
   float t = (blackness - kGammaBlendStart) / kGammaBlendSpan;
@@ -38,8 +50,18 @@ uint8_t coverage_from_blackness(float blackness) {
 }  // namespace
 
 uint8_t rgb_to_toner(uint8_t r, uint8_t g, uint8_t b) {
-  const float y =
-      (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255.0f;
+  // Weigh the channels in LINEAR light, then re-encode, which is what
+  // ColorSync does when macOS hands the old CUPS path a grey raster. Doing
+  // the sum on gamma-encoded values instead makes saturated colour far too
+  // dark -- pure red came out at 65% coverage, near solid on paper -- and
+  // the laser curve below is tuned for ColorSync-style greys, not for that.
+  //
+  // For a neutral input (r == g == b) the weights sum to 1 and the transfer
+  // functions cancel, so greys pass through unchanged and device_gray_to_toner
+  // keeps the exact behaviour the halftone was tuned against.
+  const float y = linear_to_srgb(0.2126f * srgb_to_linear(r) +
+                                 0.7152f * srgb_to_linear(g) +
+                                 0.0722f * srgb_to_linear(b));
   return coverage_from_blackness(1.0f - y);
 }
 

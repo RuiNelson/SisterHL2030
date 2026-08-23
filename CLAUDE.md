@@ -133,6 +133,15 @@ names must start with a letter or underscore", whatever the real cause. The
 server log carries the true reason — read it first. Declaring a raw `format`
 without a `printfile_cb` fails exactly this way.
 
+**The laser curve is tuned for ColorSync-style greys.** The old CUPS path
+never exercised colour: macOS converts to grey itself and hands the filter
+`cupsColorSpace=3`, so `device_gray_to_toner()` and its curve were tuned
+against that. Anything that produces greys of its own must match, or the page
+comes out far too dark. `rgb_to_toner()` therefore weighs channels in **linear
+light** and re-encodes; a neutral input passes through untouched, so the grey
+path stays exactly as tuned. Check a change with `Scripts/decode_job.py`: for
+`test_fixtures/flag.png` the proven CUPS path is ~40% black coverage.
+
 **Always take sRGB from PAPPL, never its 8-bit grey.** PAPPL 1.4 has no
 RGB-to-grey conversion anywhere (`grep rgb_to_gray` finds nothing); for an
 8-bit grey raster it copies `bpp` bytes straight out of its 3-byte RGB buffer,

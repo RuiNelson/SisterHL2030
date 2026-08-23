@@ -285,6 +285,22 @@ int main() {
     }
   }
 
+  // Greys must survive the colour path untouched: the laser curve was tuned
+  // against the grey rasters macOS produces, and device_gray_to_toner routes
+  // through rgb_to_toner.
+  for (int v = 0; v <= 255; v += 17) {
+    const uint8_t g = static_cast<uint8_t>(v);
+    expect(sisterhl2030::rgb_to_toner(g, g, g) ==
+               sisterhl2030::device_gray_to_toner(g),
+           "neutral grey is unchanged by the colour path");
+  }
+  // Saturated colour must not slam to near-solid coverage.
+  expect(sisterhl2030::rgb_to_toner(255, 0, 0) < 128,
+         "pure red stays below half coverage");
+  expect(sisterhl2030::rgb_to_toner(255, 255, 0) < 40, "yellow stays light");
+  expect(sisterhl2030::rgb_to_toner(0, 0, 0) == 255, "black is full toner");
+  expect(sisterhl2030::rgb_to_toner(255, 255, 255) == 0, "white is no toner");
+
   // A flat mid-grey must come out as a dot pattern, never a solid block.
   // Regression guard: when the PAPPL app was handed the red channel instead
   // of luma, saturated colour collapsed to pure black/white, and this is what
