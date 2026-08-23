@@ -1,55 +1,110 @@
 # SisterHL2030
 
-Open-source driver for the Brother HL-2030, targeting native **Apple Silicon**
-macOS. Version 1 supports this model only.
+A modern, native driver for the Brother HL-2030 laser printer on Apple
+Silicon Macs.
 
-The HL-2030 is a host-based laser: it does not speak PostScript, PCL 5 as a
-full PDL, AirPrint, or IPP Everywhere. The host must rasterize the page and
-send Brother's compressed stream over USB.
+## Why this exists
 
-## Features
+The Brother HL-2030 is a great little printer, but Brother stopped updating
+its Mac driver years ago. The old driver only runs today because of
+**Rosetta 2**, the compatibility layer that lets Intel-only apps run on
+Apple Silicon Macs, and Apple has announced that a future version of macOS
+will remove Rosetta 2 entirely. When that happens, the official Brother
+driver will simply stop working, and an otherwise perfectly good printer
+would become e-waste.
 
-* Apple Silicon support
-* When printing a page, it will default to 100% scale
-* Atkinson half-toning algorithm
-* AirPrint support and network sharing support
-* Consumable levels reporting
+SisterHL2030 is a from-scratch driver, written natively for Apple Silicon,
+so your HL-2030 keeps working long after Rosetta 2 is gone.
 
-## Quality Modes
+While rebuilding the driver, it also picked up a feature Brother's own
+driver never had: **AirPrint**. With the printer connected to your Mac over
+USB and printer sharing turned on in System Settings, every device on your
+network (other Macs, iPhones, iPads) can print to it wirelessly, no
+drivers required on their end.
 
-* **Draft** — 300dpi, toner saving mode
-* **Normal** — 600dpi, toner saving mode
-* **Fine** — 1200dpi
+## Is this for you?
 
-## Status
+If you have a Brother HL-2030 (or HL-2030R) connected to an Apple Silicon
+Mac (M1 or newer) by USB, yes.
 
-| Piece | State |
-| --- | --- |
-| Protocol recovered from Linux i386 blobs | done |
-| Envelope confirmed vs official macOS `rastertobrother2030` | done |
-| Native `arm64` raster encoder (mode 1030) | prints on USB HL-2030 |
-| Toner / drum levels via USB PJL | shown in Supply Levels |
-| CLI `sister-rawtobr` (PBM → job stream) | done |
-| PAPPL printer application (IPP Everywhere) | prints, supplies, AirPrint |
-| Signed macOS `.pkg` | later |
+This driver does **not** work with the printer over a network/Wi-Fi
+connection, and it does not support Intel Macs. Plug the printer directly
+into the Apple Silicon Mac that will host it, then turn on sharing (see
+below) so that Mac shares it with everything else.
 
-This is not a port of the 2005 i386 `rawtobr2` binary. That encoder is a
-stripped ELF with no source; SisterHL2030 reimplements the job format
-documented in [`docs/protocol.md`](docs/protocol.md).
+## Installing
 
-## License
+1. Go to the [Releases page](https://github.com/RuiNelson/SisterHL2030/releases)
+   and download the latest set of installer packages.
+2. If you still have Brother's official driver installed, double-click
+   **`UninstallBrotherDrivers.pkg`** first and follow the prompts. The two
+   drivers can't be installed side by side.
+3. Plug the printer into your Mac with a USB cable and turn it on.
+4. Double-click **`InstallSisterDrivers.pkg`** and follow the prompts. macOS
+   will ask for your administrator password, which is normal for anything
+   that installs system software.
 
-GNU GPL v2 or later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+The printer will now show up in System Settings → Printers & Scanners on
+this Mac, and you can print to it right away from here.
 
-The license matches the CUPS wrapper sources Brother already shipped under
-GPL-2, and stays compatible with [brlaser](https://github.com/pdewacht/brlaser).
+### Sharing it with other devices (AirPrint)
 
-`LinuxDrivers/` keeps the original Brother packages as a protocol reference.
-The proprietary i386 blobs are **not** linked into this driver.
+To print from other Macs, iPhones, or iPads on your network, you need to
+turn sharing on for this printer; it is not shared automatically:
 
-## Build
+1. Open **System Settings → General → Sharing**.
+2. Turn on **Printer Sharing**, then click the ⓘ next to it.
+3. Check the box next to the HL-2030 to share it.
 
-Requires CMake 3.20+ and a C++17 compiler (Apple Clang on macOS is enough).
+Once that's on, the printer appears in the Print dialog on every
+AirPrint-capable device on the same network, for as long as this Mac is
+awake and the printer is connected and powered on.
+
+All three installers are signed with a Developer ID certificate, so macOS
+will let you open them normally (you may still see a first-run Gatekeeper
+prompt, which is expected for software from outside the App Store).
+
+### Uninstalling
+
+Double-click **`UninstallSisterDrivers.pkg`** from the same release. It
+removes the driver, its background service, and the printer queue, and
+leaves nothing behind.
+
+## What you get
+
+* **Native Apple Silicon**: no Rosetta 2, no emulation.
+* **AirPrint**: print from any Mac, iPhone, or iPad on the network, once
+  the printer is connected to one Mac over USB and sharing is turned on.
+* **Correct scaling**: pages print at 100% by default (older setups on
+  Apple Silicon are prone to printing everything at half-size).
+* **Good-looking output**: an Atkinson dithering algorithm for halftones,
+  the same technique used by classic Mac graphics software, tuned for this
+  printer's resolutions.
+* **Toner and drum levels**: shown right in System Settings' Supply Levels
+  panel, same as a modern printer.
+* **Three quality modes**: Draft (300 dpi), Normal (600 dpi), and Fine
+  (1200 dpi).
+
+## How it works, briefly
+
+The HL-2030 is a "host-based" printer: it has no PostScript, PCL, or
+AirPrint smarts of its own, so whatever computer it's plugged into has to
+do all the work: turning the page into dots, choosing which dots become
+toner, and speaking Brother's own compressed language over USB. That's what
+this driver does. It runs as a small background service (a "printer
+application") that takes over the job the manual work would otherwise
+require, then adds the AirPrint sharing on top.
+
+The wire format was recovered by studying Brother's own Linux drivers and
+double-checking the result against the real, official macOS driver on
+actual hardware; see [`docs/protocol.md`](docs/protocol.md) if you're
+curious about the details. None of Brother's proprietary code is compiled
+into this driver; it's a clean-room reimplementation.
+
+## For developers
+
+Building from source requires CMake 3.20+ and a C++17 compiler (Apple
+Clang is enough):
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -57,103 +112,64 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-That builds the encoder, the tests and the CLI tools. The driver itself is a
-PAPPL printer application, which is off by default because it downloads and
-builds PAPPL 1.4.x (pinned by checksum) the first time:
+That builds the encoder library, the tests, and the CLI tools. The printer
+application itself is built with an extra flag, since it downloads and
+builds [PAPPL](https://github.com/michaelrsweet/pappl) 1.4.x (pinned by
+checksum) the first time:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON
 cmake --build build --target sister-printer-app
 ```
 
-The installer passes that flag for you.
+`Scripts/` has the shell-based install/uninstall path used during
+development (as opposed to the `.pkg` installers used for releases):
 
-On Apple Silicon this produces native `arm64` binaries. A universal extra
-slice can be added later with `CMAKE_OSX_ARCHITECTURES=arm64;x86_64`.
+```sh
+"Scripts/Uninstall Official Brother Drivers.sh"   # if needed, run first
+"Scripts/Install Sister HL2030.sh"
+```
 
-`sister-rawtobr` reads a binary PBM (`P4`) on stdin and writes a HL-2030 job
-on stdout:
+Both ask for an administrator password and refuse to run if the official
+Brother package is still present. `Scripts/Uninstall Sister HL2030.sh`
+reverses it. `Scripts/build_distribution_packages.sh` builds the three
+signed `.pkg` files that ship in each release.
+
+To turn a bitmap into a HL-2030 job stream directly, without printing:
 
 ```sh
 ./build/sister-rawtobr < page.pbm > job.bin
 ```
 
-Sending `job.bin` to the printer (USB `04f9:0027`) is a hardware test.
-
-To replace the Intel Brother CUPS package with this native filter, run
-the two programs in `Scripts/` **in this order** (from Terminal; you can
-drag the file onto the Terminal window and press Enter):
-
-1. `Scripts/Uninstall Official Brother Drivers.sh` — removes the 2014
-   x86_64/i386 Brother package.
-2. `Scripts/Install Sister HL2030.sh` — builds the arm64 filter, installs
-   it into `/Library/Printers/SisterHL2030/`, and points the USB queue at
-   it.
-
-The installer **refuses to continue** if it still finds the official
-Brother drivers, so they cannot be stacked. macOS will ask for an
-administrator password on each step.
-
-Each build has a driver version (`1.1.0` plus the git commit). Confirm the
-copy that is installed is the one serving jobs:
+And to decode a job stream back into a bitmap, to check what would land on
+paper without spending any:
 
 ```sh
-./build/sister-printer-app --version
-/Library/Printers/SisterHL2030/sister-printer-app --version
-"Scripts/Check Sister HL2030.sh"
+python3 Scripts/decode_job.py job.bin out.pbm
 ```
 
-To remove SisterHL2030 again, run `Scripts/Uninstall Sister HL2030.sh`. It
-takes out the printer application, its background service, its saved printer
-state and any queue pointing at it.
-
-The queue is created as **IPP Everywhere** (`ipp://127.0.0.1:8631/ipp/print`)
-talking to the SisterHL2030 [PAPPL](https://github.com/michaelrsweet/pappl)
-printer application, which runs as a LaunchDaemon. That is the replacement
-for a CUPS PPD, which `lpadmin` already reports as deprecated. The daemon
-owns the USB device: it rasterizes, halftones, encodes and writes the job
-itself, and reads toner and drum levels over PJL on the same connection.
-
-It serves a web page of its own at `http://localhost:8631/` with status,
-supply levels and media settings, and advertises the printer on the LAN for
-AirPrint as "Brother HL-2030".
-
-To see what a job would look like without printing it:
-
-```sh
-"Scripts/Preview PAPPL Render.sh" some-image.png normal
-```
-
-## Architecture (v1)
-
-```
-document → PAPPL raster (sRGB) → luma → Atkinson → mode 1030 → USB
-```
-
-The driver is a [PAPPL](https://github.com/michaelrsweet/pappl) printer
-application: a userspace IPP Everywhere printer that CUPS on modern macOS
-talks to without a PPD. Classic CUPS filters are deprecated since CUPS 2.3 /
-macOS 11.
-
-`rastertosisterhl2030` remains as a classic CUPS filter, no longer installed,
-kept as a reference path for comparing encoder output.
+See [`CLAUDE.md`](CLAUDE.md) for the full architecture writeup, and
+[`docs/protocol.md`](docs/protocol.md) /
+[`docs/reverse-engineering.md`](docs/reverse-engineering.md) for how the
+wire format was recovered.
 
 ## Hardware
 
 | | |
 | --- | --- |
 | Model | Brother HL-2030 series |
-| USB | Vendor `0x04f9`, product `0x0027`, serial `B9J561723` |
-| CUPS URI | `usb://Brother/HL-2030%20series?serial=B9J561723` |
-| IEEE 1284 | `MFG:Brother;MDL:HL-2030 series` |
-| Resolutions | 300, 600, HQ1200 (1200×600 advertised) |
-| Duplex | no (v1) |
-| Connection | USB full-speed (12 Mbit/s) |
+| USB | Vendor `0x04f9`, product `0x0027` |
+| Connection | USB only (no network/Wi-Fi support) |
+| Resolutions | 300, 600, and 1200×600 (Fine) dpi |
+| Duplex | Not supported |
 
-## References
+## License
 
-- [`docs/protocol.md`](docs/protocol.md) — job format
-- [`docs/reverse-engineering.md`](docs/reverse-engineering.md) — blob inventory
-- Brother Linux LPR 2.0.1 / cupswrapper 2.0.1 (GPL-2 glue + i386 encoder)
-- [OpenPrinting: Printer Applications](https://openprinting.github.io/cups/drivers.html)
-- [brlaser](https://github.com/pdewacht/brlaser) — independent open-source encoder for the same family
+GNU GPL v2 or later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+`LinuxDrivers/` keeps Brother's original Linux packages around purely as a
+protocol reference; the proprietary binaries in there are never compiled
+into this driver. This project's license matches the GPL-2 CUPS wrapper
+sources Brother already shipped, and stays compatible with
+[brlaser](https://github.com/pdewacht/brlaser), an independent open-source
+driver for related Brother models.
