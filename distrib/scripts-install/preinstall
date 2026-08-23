@@ -1,0 +1,45 @@
+#!/bin/bash
+# preinstall for InstallSisterDrivers.pkg.
+# Refuses to install on top of the official Intel Brother package, matching
+# the guard in Scripts/Install Sister HL2030.sh.
+export PATH="/usr/sbin:/usr/bin:/bin:/sbin"
+set -uo pipefail
+
+BROTHER_PKG_ID="com.brother.PrinterDriver.MonochromeLaser.pkg"
+BROTHER_DIR="/Library/Printers/Brother"
+BROTHER_FILTER="$BROTHER_DIR/Filter/rastertobrother2030.bundle/Contents/MacOS/rastertobrother2030"
+PPD_DIR="/Library/Printers/PPDs/Contents/Resources"
+
+reasons=""
+if pkgutil --pkg-info "$BROTHER_PKG_ID" >/dev/null 2>&1; then
+  reasons="${reasons}  - System package: $BROTHER_PKG_ID"$'\n'
+fi
+if [[ -e "$BROTHER_DIR" ]]; then
+  reasons="${reasons}  - Folder $BROTHER_DIR"$'\n'
+fi
+if [[ -e "$BROTHER_FILTER" ]]; then
+  reasons="${reasons}  - Intel filter rastertobrother2030"$'\n'
+fi
+if [[ -d "$PPD_DIR" ]]; then
+  n="$(find "$PPD_DIR" -maxdepth 1 -name 'Brother *' 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${n:-0}" -gt 0 ]]; then
+    reasons="${reasons}  - $n Brother PPD files in $PPD_DIR"$'\n'
+  fi
+fi
+
+if [[ -n "$reasons" ]]; then
+  {
+    echo "SisterHL2030 will not install on top of the official Brother drivers."
+    echo "Found:"
+    printf '%s' "$reasons"
+    echo "Run UninstallBrotherDrivers.pkg first, then install this package again."
+  } >&2
+  exit 1
+fi
+
+arch="$(uname -m)"
+if [[ "$arch" != "arm64" ]]; then
+  echo "WARNING: this Mac reports architecture \"${arch}\", not Apple Silicon. SisterHL2030 was built for arm64." >&2
+fi
+
+exit 0

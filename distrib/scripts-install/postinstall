@@ -1,0 +1,154 @@
+#!/bin/bash
+# postinstall for InstallSisterDrivers.pkg.
+# The payload has already placed sister-printer-app, sister-status, the
+# icon assets and org.sisterhl2030.printer.plist at their final paths; this
+# finishes what Scripts/_privileged-install.sh does after the copy step.
+export PATH="/usr/sbin:/usr/bin:/bin:/sbin"
+
+DEST="/Library/Printers/SisterHL2030"
+PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
+STATUS_PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.status.plist"
+LABEL="system/org.sisterhl2030.printer"
+STATUS_LABEL="system/org.sisterhl2030.status"
+PRINTER="Brother_HL_2030"
+QUEUE="Brother_HL_2030_series"
+LOG="/tmp/sisterhl2030-install.log"
+
+set +e
+(
+  set -euo pipefail
+  echo "SisterHL2030 pkg install"
+  echo "date: $(date)"
+
+  mkdir -p "$DEST/spool" /Library/Logs
+  chmod 700 "$DEST/spool"
+
+  chmod 755 "$DEST/sister-printer-app" "$DEST/sister-status" "$DEST/.create-queue.sh"
+  codesign --force --sign - "$DEST/sister-printer-app"
+  codesign --force --sign - "$DEST/sister-status"
+
+  ver="$("$DEST/sister-printer-app" --version 2>/dev/null || true)"
+  if [[ -n "$ver" ]]; then
+    printf '%s\n' "$ver" > "$DEST/VERSION"
+    echo "Installed driver $ver"
+  fi
+
+  # Retire the ippeveprinter façade, same as the shell installer.
+  launchctl bootout "$STATUS_LABEL" 2>/dev/null || true
+  rm -f "$STATUS_PLIST_DEST"
+  rm -rf "$DEST/filter"
+  rm -f "$DEST/printer-attrs.conf" "$DEST/device-uri" "$DEST/usb.lock" \
+        "$DEST/status-empty" "$DEST/toner-save"
+
+  # Printer Application, not a PPD. Remove any classic PPD earlier versions
+  # installed so CUPS cannot pick it by accident.
+  rm -f "/Library/Printers/PPDs/Contents/Resources/Sister HL-2030.ppd" \
+        "/Library/Printers/PPDs/Contents/Resources/Sister HL-2030.gz" 2>/dev/null || true
+
+  # Link the CUPS icon into any PPD that already references SisterHL2030
+  # (a reinstall over an existing queue). A fresh install links it once the
+  # queue is created below.
+  link_icon() {
+    [[ -d /etc/cups/ppd ]] || return 0
+    local ppd icns
+    for ppd in /etc/cups/ppd/*.ppd; do
+      [[ -f "$ppd" ]] || continue
+      grep -q 'SisterHL2030\|HL-2030 series' "$ppd" || continue
+      icns="$(awk -F'"' '/^\*APPrinterIconPath:/{print $2; exit}' "$ppd")"
+      if [[ -n "$icns" ]]; then
+        mkdir -p "$(dirname "$icns")"
+        cp "$DEST/.sister.icns" "$icns"
+        chmod 644 "$icns"
+        echo "CUPS icon: $icns"
+      fi
+    done
+    return 0
+  }
+  link_icon
+
+  chmod 644 "$PLIST_DEST"
+  launchctl bootout "$LABEL" 2>/dev/null || true
+  launchctl unload "$PLIST_DEST" 2>/dev/null || true
+  if launchctl bootstrap system "$PLIST_DEST" 2>/dev/null; then
+    launchctl enable "$LABEL" 2>/dev/null || true
+    launchctl kickstart -k "$LABEL" 2>/dev/null || true
+    echo "LaunchDaemon $LABEL started."
+  elif launchctl load -w "$PLIST_DEST" 2>/dev/null; then
+    echo "LaunchDaemon loaded (launchctl load)."
+  else
+    echo "WARNING: could not start the LaunchDaemon; try: launchctl bootstrap system $PLIST_DEST" >&2
+  fi
+
+  ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if nc -z localhost 8631 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  [[ "$ready" -eq 1 ]] || echo "WARNING: the printer application is not listening on 8631 yet." >&2
+
+  usb_uri="$(lpinfo -v 2>/dev/null | awk '/usb:\/\/Brother\/HL-2030/{print $2; exit}' || true)"
+  if "$DEST/sister-printer-app" printers -u ipp://localhost:8631/ 2>/dev/null | grep -qx "$PRINTER"; then
+    echo "Printer '$PRINTER' already registered."
+    if [[ -n "$usb_uri" ]]; then
+      "$DEST/sister-printer-app" modify -u ipp://localhost:8631/ -d "$PRINTER" -v "$usb_uri" 2>/dev/null || true
+    fi
+  elif [[ -n "$usb_uri" ]]; then
+    if "$DEST/sister-printer-app" add -u ipp://localhost:8631/ -d "$PRINTER" -m sister-hl2030 -v "$usb_uri"; then
+      echo "Printer '$PRINTER' added for $usb_uri."
+    else
+      echo "WARNING: could not add the printer; is the HL-2030 connected?" >&2
+    fi
+  else
+    echo "WARNING: no HL-2030 on USB right now. Connect it and reopen System Settings, or run this installer again." >&2
+  fi
+
+  rm -f /etc/cups/ppd/localhost.ppd /etc/cups/ppd/HL_2030.ppd
+  launchctl kickstart -k system/org.cups.cupsd 2>/dev/null || true
+
+  echo "Creating the CUPS queue…"
+  "$DEST/.create-queue.sh" "$QUEUE"
+  link_icon
+
+  cupsenable "$QUEUE" 2>/dev/null || true
+  cupsaccept "$QUEUE" 2>/dev/null || true
+  lpoptions -d "$QUEUE" 2>/dev/null || true
+  lpadmin -p "$QUEUE" -o printer-is-shared=false 2>/dev/null || true
+
+  # Drop the extra queues Bonjour/AirPrint discovery creates, same rule as
+  # remove_duplicate_sister_queues in Scripts/_common.sh.
+  while IFS= read -r line; do
+    [[ "$line" == *": "* ]] || continue
+    uri="${line#*: }"
+    name="${line%%:*}"
+    name="${name##* }"
+    [[ -n "$name" && "$name" != "$QUEUE" ]] || continue
+    if [[ "$uri" == *":8631"* || "$uri" == *"HL-2030._ipp"* ]]; then
+      echo "Removing duplicate queue: $name"
+      lpadmin -x "$name" 2>/dev/null || true
+    fi
+  done < <(lpstat -v 2>/dev/null || true)
+  for extra in HL_2030 HL-2030 localhost Brother_HL_2030; do
+    [[ "$extra" == "$QUEUE" ]] && continue
+    lpadmin -x "$extra" 2>/dev/null || true
+  done
+
+  # CUPS only copies marker-* off the printer while a job runs through its
+  # backend, so Supply Levels stays empty until the first print. This
+  # no-op job populates it without spending paper.
+  if command -v lp >/dev/null 2>&1; then
+    probe="$(mktemp -t sister-status-probe)"
+    printf 'status\n' > "$probe"
+    lp -d "$QUEUE" -t .sister-status "$probe" >/dev/null 2>&1 || true
+    sleep 3
+    rm -f "$probe"
+  fi
+
+  echo "SisterHL2030 installed (PAPPL printer application on port 8631)."
+) >"$LOG" 2>&1
+status=$?
+chmod 644 "$LOG" 2>/dev/null || true
+cat "$LOG"
+exit "$status"

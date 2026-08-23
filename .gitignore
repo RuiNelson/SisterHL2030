@@ -12,4 +12,15 @@ compile_commands.json
 *.user
 CMakeUserPresets.json
 /captures/
-distrib/
+# distrib/ is the local packaging build: root-install/ (the payload tree,
+# copied fresh from build/, launchd/ and docs/ by
+# Scripts/build_distribution_packages.sh), the built .pkg files, and any
+# CSR/cert material are all regenerated or fetched, not source. The pkg
+# pre/postinstall scripts ARE source, so they're tracked.
+distrib/*
+!distrib/scripts-install/
+!distrib/scripts-install/**
+!distrib/scripts-uninstall-sister/
+!distrib/scripts-uninstall-sister/**
+!distrib/scripts-uninstall-brother/
+!distrib/scripts-uninstall-brother/**
