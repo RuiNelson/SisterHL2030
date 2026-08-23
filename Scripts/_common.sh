@@ -110,7 +110,7 @@ previous_sister_reasons() {
     echo "  • Classic Sister HL-2030 PPD (this is what CUPS reports as deprecated)"
     found=0
   fi
-  if LC_ALL=C lpstat -v "$DEFAULT_QUEUE" 2>/dev/null | grep -q 'usb://Brother/HL-2030'; then
+  if lpstat -v "$DEFAULT_QUEUE" 2>/dev/null | grep -q 'usb://Brother/HL-2030'; then
     echo "  • Queue ${DEFAULT_QUEUE} still points at raw USB (PPD)"
     found=0
   fi
@@ -118,12 +118,15 @@ previous_sister_reasons() {
 }
 
 detect_hl2030_uri() {
-  LC_ALL=C lpinfo -v 2>/dev/null | awk '/usb:\/\/Brother\/HL-2030/{print $2; exit}'
+  lpinfo -v 2>/dev/null | awk '/usb:\/\/Brother\/HL-2030/{print $2; exit}'
 }
 
-# Drop extra CUPS queues that point at the Sister IPP façade, so this Mac
-# keeps a single added printer. AirPrint on the LAN still uses Bonjour.
-# LC_ALL=C keeps lpstat output in English, whatever the user's locale is.
+# Drop extra CUPS queues that point at the Sister printer application, so this
+# Mac keeps a single added printer. AirPrint on the LAN still uses Bonjour.
+#
+# lpstat is localized and LC_ALL=C does not change that on macOS -- it still
+# prints "dispositivo para" on a Portuguese system. So parse by shape, never
+# by the prefix text: every line is "<prefix> NAME: URI".
 #
 # A queue left on a dnssd:// URI is not just untidy: if CUPS also shares that
 # queue, the Mac advertises it back on Bonjour and the URI can resolve into
@@ -132,10 +135,11 @@ remove_duplicate_sister_queues() {
   local keep="${1:-$DEFAULT_QUEUE}"
   local line name uri
   while IFS= read -r line; do
-    [[ "$line" == "device for "* ]] || continue
-    name="${line#device for }"
-    uri="${name#*: }"
-    name="${name%%:*}"
+    [[ "$line" == *": "* ]] || continue
+    uri="${line#*: }"
+    name="${line%%:*}"
+    name="${name##* }"
+    [[ -n "$name" ]] || continue
     [[ "$name" == "$keep" ]] && continue
     # "HL-2030._ipp" matches both _ipp._tcp and the _ipps._tcp TLS variant,
     # which is the one macOS discovers and adds first.
@@ -143,7 +147,7 @@ remove_duplicate_sister_queues() {
       echo "Removing duplicate queue: $name"
       /usr/sbin/lpadmin -x "$name" 2>/dev/null || true
     fi
-  done < <(LC_ALL=C lpstat -v 2>/dev/null || true)
+  done < <(lpstat -v 2>/dev/null || true)
   local extra
   for extra in HL_2030 HL-2030 localhost Brother_HL_2030; do
     [[ "$extra" == "$keep" ]] && continue

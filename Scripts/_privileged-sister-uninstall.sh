@@ -25,16 +25,19 @@ set +e
   echo "LaunchDaemons removed."
 
   # Drop every CUPS queue that pointed at us, however it was added.
+  # lpstat is localized and LC_ALL=C does not change that on macOS, so parse
+  # by shape: every line is "<localized prefix> NAME: URI".
   while IFS= read -r line; do
-    [[ "$line" == "device for "* ]] || continue
-    name="${line#device for }"
-    uri="${name#*: }"
-    name="${name%%:*}"
+    [[ "$line" == *": "* ]] || continue
+    uri="${line#*: }"
+    name="${line%%:*}"
+    name="${name##* }"
+    [[ -n "$name" ]] || continue
     if [[ "$uri" == *":8631"* || "$uri" == *"HL-2030._ipp"* ]]; then
       echo "Removing queue $name"
       lpadmin -x "$name" 2>/dev/null
     fi
-  done < <(LC_ALL=C lpstat -v 2>/dev/null)
+  done < <(lpstat -v 2>/dev/null)
   lpadmin -x "$QUEUE" 2>/dev/null
 
   rm -rf "$DEST"
