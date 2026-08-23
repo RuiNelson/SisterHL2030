@@ -14,6 +14,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -39,6 +41,33 @@ struct JobState {
   unsigned height = 0;
   unsigned lines_seen = 0;
 };
+
+// The old CUPS path never converted colour itself: macOS handed the filter a
+// grey raster (CUPS_CSPACE_W) and the laser curve was tuned against those
+// values. macOS's PDF rasteriser lifts tone as it goes -- for the flag it
+// emits grey 186/144 where ColorSync's own transform gives 130/87 -- so a
+// colorimetrically correct conversion lands lighter than the prints this
+// driver has always produced.
+//
+// PAPPL has no equivalent stage, so match the old output by measurement
+// rather than by theory. Solving for the exponent that reproduces the old
+// coverage gives 0.841 on test_fixtures/flag.png and 0.869 on the photo
+// fixture; 0.85 splits them. Re-derive with Scripts/decode_job.py if the
+// pipeline changes: the targets are 40.2% and 40.5% black coverage.
+constexpr float kToneCalibration = 0.85f;
+
+const std::array<uint8_t, 256>& tone_curve() {
+  static const std::array<uint8_t, 256> lut = [] {
+    std::array<uint8_t, 256> t{};
+    for (int i = 0; i < 256; ++i) {
+      const float v = std::pow(i / 255.0f, kToneCalibration);
+      t[static_cast<size_t>(i)] =
+          static_cast<uint8_t>(std::lround(v * 255.0f));
+    }
+    return t;
+  }();
+  return lut;
+}
 
 // Adapt the PAPPL device to the FILE* the encoder writes to.
 int device_write(void* cookie, const char* buffer, int bytes) {
@@ -187,14 +216,15 @@ bool rwriteline(pappl_job_t* job, pappl_pr_options_t* options,
   // bytes straight out of its 3-byte RGB buffer, so "grey" is really the red
   // channel and any saturated colour collapses to black or white. Ask for
   // sRGB instead and do the luma ourselves.
+  const std::array<uint8_t, 256>& tone = tone_curve();
   if (options->header.cupsBitsPerPixel >= 24) {
     for (unsigned x = 0; x < state->width; ++x) {
       const unsigned char* px = line + static_cast<size_t>(x) * 3;
-      row[x] = sisterhl2030::rgb_to_toner(px[0], px[1], px[2]);
+      row[x] = tone[sisterhl2030::rgb_to_toner(px[0], px[1], px[2])];
     }
   } else {
     for (unsigned x = 0; x < state->width; ++x) {
-      row[x] = sisterhl2030::device_gray_to_toner(line[x]);
+      row[x] = tone[sisterhl2030::device_gray_to_toner(line[x])];
     }
   }
 

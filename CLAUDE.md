@@ -142,6 +142,15 @@ light** and re-encodes; a neutral input passes through untouched, so the grey
 path stays exactly as tuned. Check a change with `Scripts/decode_job.py`: for
 `test_fixtures/flag.png` the proven CUPS path is ~40% black coverage.
 
+**The PAPPL colour path is calibrated, not derived.** macOS's PDF rasteriser
+lifts tone before the old CUPS path ever saw it (flag.png arrives as grey
+186/144 where ColorSync's own transform gives 130/87), so a colorimetrically
+correct conversion prints lighter than this driver always has. `sister_app.cpp`
+applies `kToneCalibration` to match the old output by measurement. Targets, via
+`Scripts/decode_job.py`: 40.2% black coverage on `flag.png`, 40.5% on the photo
+fixture. Re-derive the exponent if the pipeline changes; residual per-region
+error is about 4 points, light areas slightly darker and dark slightly lighter.
+
 **Always take sRGB from PAPPL, never its 8-bit grey.** PAPPL 1.4 has no
 RGB-to-grey conversion anywhere (`grep rgb_to_gray` finds nothing); for an
 8-bit grey raster it copies `bpp` bytes straight out of its 3-byte RGB buffer,
