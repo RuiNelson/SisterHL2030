@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Sister HL-2030</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <options customize="never" require-scripts="false" rootVolumeOnly="true"/>
+    <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="install"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="install" visible="false">
+        <pkg-ref id="org.sisterhl2030.pkg.install"/>
+    </choice>
+    <pkg-ref id="org.sisterhl2030.pkg.install" version="@VERSION@" onConclusion="none">component-install.pkg</pkg-ref>
+</installer-gui-script>

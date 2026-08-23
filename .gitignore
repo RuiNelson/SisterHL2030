@@ -24,3 +24,6 @@ distrib/*
 !distrib/scripts-uninstall-sister/**
 !distrib/scripts-uninstall-brother/
 !distrib/scripts-uninstall-brother/**
+!distrib/resources-install/
+!distrib/resources-install/**
+!distrib/distribution-install.xml.in

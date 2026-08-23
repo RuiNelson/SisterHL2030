@@ -1,6 +1,8 @@
 #!/bin/bash
 # Build the three signed .pkg installers in distrib/:
-#   InstallSisterDrivers.pkg    - the native arm64 driver
+#   InstallSisterDrivers.pkg    - the native arm64 driver, as a distribution
+#                                 package with a localized welcome pane
+#                                 (resources-install/*.lproj)
 #   UninstallSisterDrivers.pkg  - removes it
 #   UninstallBrotherDrivers.pkg - removes the official Intel Brother package
 #
@@ -72,13 +74,27 @@ chmod 644 "$PAYLOAD/icon.png" "$PAYLOAD/.sister.icns"
 rm -rf "$icon_tmp"
 trap - EXIT
 
-echo "Building InstallSisterDrivers.pkg ($VERSION)…"
+echo "Building the install component ($VERSION)…"
 pkgbuild \
   --root "$DISTRIB/root-install" \
   --identifier org.sisterhl2030.pkg.install \
   --version "$VERSION" \
   --install-location / \
   --scripts "$DISTRIB/scripts-install" \
+  "$DISTRIB/component-install.pkg"
+
+# Wraps the component in a distribution package so Installer.app shows a
+# welcome pane first (connect the printer, uninstall Brother's drivers).
+# The pane text is localized via .lproj folders in resources-install/,
+# picked automatically to match the user's language, same mechanism as any
+# other pkg resource.
+echo "Building InstallSisterDrivers.pkg ($VERSION)…"
+sed "s/@VERSION@/$VERSION/" "$ROOT/distrib/distribution-install.xml.in" \
+  > "$DISTRIB/distribution-install.xml"
+productbuild \
+  --distribution "$DISTRIB/distribution-install.xml" \
+  --package-path "$DISTRIB" \
+  --resources "$ROOT/distrib/resources-install" \
   --sign "$SIGN_ID" \
   "$DISTRIB/InstallSisterDrivers.pkg"
 
