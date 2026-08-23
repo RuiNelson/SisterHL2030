@@ -34,16 +34,43 @@ if [[ ! -x "$ROOT/build/sister-printer-app" || ! -x "$ROOT/build/sister-status" 
   exit 1
 fi
 
-echo "Refreshing the install payload from build/…"
+echo "Rebuilding the install payload from build/, launchd/ and docs/…"
 PAYLOAD="$DISTRIB/root-install/Library/Printers/SisterHL2030"
+LAUNCHD_DEST="$DISTRIB/root-install/Library/LaunchDaemons"
+mkdir -p "$PAYLOAD" "$LAUNCHD_DEST"
+
 cp "$ROOT/build/sister-printer-app" "$PAYLOAD/sister-printer-app"
 cp "$ROOT/build/sister-status" "$PAYLOAD/sister-status"
-chmod 755 "$PAYLOAD/sister-printer-app" "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
 cp "$ROOT/Scripts/_privileged-create-queue.sh" "$PAYLOAD/.create-queue.sh"
-chmod 755 "$PAYLOAD/.create-queue.sh"
+chmod 755 "$PAYLOAD/sister-printer-app" "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
+
 cp "$ROOT/launchd/org.sisterhl2030.printer.plist" \
-   "$DISTRIB/root-install/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
-chmod 644 "$DISTRIB/root-install/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
+   "$LAUNCHD_DEST/org.sisterhl2030.printer.plist"
+chmod 644 "$LAUNCHD_DEST/org.sisterhl2030.printer.plist"
+
+# icon.png (IPP) and .sister.icns (CUPS, linked into a PPD by postinstall)
+# regenerated the same way Scripts/_privileged-icon.sh does, from the one
+# tracked source image.
+sips -z 512 512 -s format png "$ROOT/docs/sister.png" --out "$PAYLOAD/icon.png" >/dev/null
+icon_tmp="$(mktemp -d)"
+trap 'rm -rf "$icon_tmp"' EXIT
+iconset="$icon_tmp/sister.iconset"
+mkdir -p "$iconset"
+sips -z 16 16 "$ROOT/docs/sister.png" --out "$iconset/icon_16x16.png" >/dev/null
+sips -z 32 32 "$ROOT/docs/sister.png" --out "$iconset/icon_16x16@2x.png" >/dev/null
+sips -z 32 32 "$ROOT/docs/sister.png" --out "$iconset/icon_32x32.png" >/dev/null
+sips -z 64 64 "$ROOT/docs/sister.png" --out "$iconset/icon_32x32@2x.png" >/dev/null
+sips -z 128 128 "$ROOT/docs/sister.png" --out "$iconset/icon_128x128.png" >/dev/null
+sips -z 256 256 "$ROOT/docs/sister.png" --out "$iconset/icon_128x128@2x.png" >/dev/null
+sips -z 256 256 "$ROOT/docs/sister.png" --out "$iconset/icon_256x256.png" >/dev/null
+sips -z 512 512 "$ROOT/docs/sister.png" --out "$iconset/icon_256x256@2x.png" >/dev/null
+sips -z 512 512 "$ROOT/docs/sister.png" --out "$iconset/icon_512x512.png" >/dev/null
+sips -z 1024 1024 "$ROOT/docs/sister.png" --out "$iconset/icon_512x512@2x.png" >/dev/null
+iconutil -c icns -o "$icon_tmp/sister.icns" "$iconset"
+cp "$icon_tmp/sister.icns" "$PAYLOAD/.sister.icns"
+chmod 644 "$PAYLOAD/icon.png" "$PAYLOAD/.sister.icns"
+rm -rf "$icon_tmp"
+trap - EXIT
 
 echo "Building InstallSisterDrivers.pkg ($VERSION)…"
 pkgbuild \
