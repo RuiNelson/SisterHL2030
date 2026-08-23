@@ -29,6 +29,36 @@ if ! security find-identity -v 2>/dev/null | grep -q "$SIGN_ID"; then
   exit 1
 fi
 
+# "Developer ID Application" (not "Installer") signs the binaries *inside*
+# the payload. Notarization rejects binaries that are only ad-hoc signed
+# (which is all _privileged-update-filter.sh does post-install, to survive
+# Tahoe's OS_REASON_CODESIGNING kill) — it wants a Developer ID signature
+# with the hardened runtime and a secure timestamp.
+APP_SIGN_ID="${SISTER_APP_IDENTITY:-CD69A8CC3BDC105191BDE97A2DC2C8D8E7FDD0D8}"
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$APP_SIGN_ID"; then
+  echo "No \"$APP_SIGN_ID\" identity in the keychain. Import your Developer ID" >&2
+  echo "Application certificate first." >&2
+  exit 1
+fi
+
+# Notarization credential profile, created once with:
+#   xcrun notarytool store-credentials sister-notary \
+#       --apple-id "you@example.com" --team-id TEAMID --password app-specific-pw
+NOTARY_PROFILE="${SISTER_NOTARY_PROFILE:-sister-notary}"
+if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+  echo "No \"$NOTARY_PROFILE\" notarytool credential profile in the keychain." >&2
+  echo "Run 'xcrun notarytool store-credentials $NOTARY_PROFILE' first." >&2
+  exit 1
+fi
+
+notarize_and_staple() {
+  local pkg="$1"
+  echo "Submitting $(basename "$pkg") for notarization (this can take a few minutes)…"
+  xcrun notarytool submit "$pkg" --keychain-profile "$NOTARY_PROFILE" --wait
+  echo "Stapling notarization ticket to $(basename "$pkg")…"
+  xcrun stapler staple "$pkg"
+}
+
 if [[ ! -x "$ROOT/build/sister-printer-app" || ! -x "$ROOT/build/sister-status" ]]; then
   echo "Build the driver first:" >&2
   echo "  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON" >&2
@@ -45,6 +75,12 @@ cp "$ROOT/build/sister-printer-app" "$PAYLOAD/sister-printer-app"
 cp "$ROOT/build/sister-status" "$PAYLOAD/sister-status"
 cp "$ROOT/Scripts/_privileged-create-queue.sh" "$PAYLOAD/.create-queue.sh"
 chmod 755 "$PAYLOAD/sister-printer-app" "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
+
+echo "Signing payload binaries for notarization…"
+codesign --force --options runtime --timestamp \
+  --sign "$APP_SIGN_ID" "$PAYLOAD/sister-printer-app"
+codesign --force --options runtime --timestamp \
+  --sign "$APP_SIGN_ID" "$PAYLOAD/sister-status"
 
 cp "$ROOT/launchd/com.ruinelson.sisterhl2030.printer.plist" \
    "$LAUNCHD_DEST/com.ruinelson.sisterhl2030.printer.plist"
@@ -97,6 +133,7 @@ productbuild \
   --resources "$ROOT/distrib/resources-install" \
   --sign "$SIGN_ID" \
   "$DISTRIB/InstallSisterDrivers.pkg"
+notarize_and_staple "$DISTRIB/InstallSisterDrivers.pkg"
 
 echo "Building UninstallSisterDrivers.pkg ($VERSION)…"
 pkgbuild \
@@ -106,6 +143,7 @@ pkgbuild \
   --scripts "$DISTRIB/scripts-uninstall-sister" \
   --sign "$SIGN_ID" \
   "$DISTRIB/UninstallSisterDrivers.pkg"
+notarize_and_staple "$DISTRIB/UninstallSisterDrivers.pkg"
 
 echo "Building UninstallBrotherDrivers.pkg ($VERSION)…"
 pkgbuild \
@@ -115,10 +153,12 @@ pkgbuild \
   --scripts "$DISTRIB/scripts-uninstall-brother" \
   --sign "$SIGN_ID" \
   "$DISTRIB/UninstallBrotherDrivers.pkg"
+notarize_and_staple "$DISTRIB/UninstallBrotherDrivers.pkg"
 
 echo
-echo "Verifying signatures…"
+echo "Verifying signatures and notarization…"
 for pkg in InstallSisterDrivers UninstallSisterDrivers UninstallBrotherDrivers; do
   echo "--- $pkg.pkg ---"
   pkgutil --check-signature "$DISTRIB/$pkg.pkg"
+  spctl --assess --type install -vv "$DISTRIB/$pkg.pkg"
 done
