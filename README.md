@@ -1,5 +1,9 @@
 # SisterHL2030
 
+<div align="center">
+  <img src="docs/anime_fixing.webp" alt="Anime girl fixing a printer">
+</div>
+
 A modern, native driver for the Brother HL-2030 laser printer on Apple
 Silicon Macs.
 
@@ -46,6 +50,10 @@ below) so that Mac shares it with everything else.
 
 The printer will now show up in System Settings → Printers & Scanners on
 this Mac, and you can print to it right away from here.
+
+<div align="center">
+  <img src="docs/anime_printing.webp" alt="Anime girl printing a document">
+</div>
 
 ### Sharing it with other devices (AirPrint)
 
