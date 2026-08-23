@@ -3,8 +3,7 @@
 Scope: Linux LPR 2.0.1 i386 binaries shipped in `LinuxDrivers/`, used as
 a protocol reference. SisterHL2030 does not link them.
 
-Authorization from Brother is on file with the project owner. The
-reimplementation lives under GPL-2+ (see `LICENSE` / `NOTICE`).
+The reimplementation lives under GPL-2+ (see `LICENSE` / `NOTICE`).
 
 ## Artifacts
 
