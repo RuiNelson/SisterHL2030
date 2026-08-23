@@ -12,6 +12,9 @@ PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.printer.plist"
 STATUS_PLIST_DEST="/Library/LaunchDaemons/org.sisterhl2030.status.plist"
 LABEL="system/org.sisterhl2030.printer"
 STATUS_LABEL="system/org.sisterhl2030.status"
+# The IPP printer name inside the printer application. PAPPL shows a friendlier
+# name over Bonjour; see kDnsSdName in src/pappl/sister_app.cpp.
+PRINTER="Brother_HL_2030"
 
 if [[ -z "$ROOT" ]]; then
   echo "Internal use: _privileged-install.sh ROOT QUEUE USB_URI" >&2
@@ -27,63 +30,46 @@ set +e
   echo "QUEUE=$QUEUE"
   echo "USB_URI=$USB_URI"
 
-  FILTER="$ROOT/build/rastertosisterhl2030"
+  APP="$ROOT/build/sister-printer-app"
   STATUS_BIN="$ROOT/build/sister-status"
-  CMD="$ROOT/src/cups/sister-ipp-command.sh"
   PLIST="$ROOT/launchd/org.sisterhl2030.printer.plist"
-  STATUS_PLIST="$ROOT/launchd/org.sisterhl2030.status.plist"
 
-  if [[ ! -x "$FILTER" ]]; then
-    echo "Missing the compiled filter: $FILTER" >&2
-    exit 1
-  fi
-  if [[ ! -f "$CMD" ]]; then
-    echo "Missing the IPP command: $CMD" >&2
+  if [[ ! -x "$APP" ]]; then
+    echo "Missing the printer application: $APP" >&2
     exit 1
   fi
   if [[ ! -f "$PLIST" ]]; then
     echo "Missing the LaunchDaemon: $PLIST" >&2
     exit 1
   fi
-  if [[ ! -x "$STATUS_BIN" ]]; then
-    echo "Missing sister-status: $STATUS_BIN" >&2
-    exit 1
-  fi
-  if [[ ! -f "$STATUS_PLIST" ]]; then
-    echo "Missing the status LaunchDaemon: $STATUS_PLIST" >&2
-    exit 1
-  fi
 
-  mkdir -p "$DEST/filter" "$DEST/spool" /Library/Logs
-  cp "$FILTER" "$DEST/filter/rastertosisterhl2030"
-  cp "$STATUS_BIN" "$DEST/filter/sister-status"
-  cp "$CMD" "$DEST/filter/sister-ipp-command"
-  chmod 755 "$DEST/filter/rastertosisterhl2030" "$DEST/filter/sister-status" \
-            "$DEST/filter/sister-ipp-command"
-  touch "$DEST/usb.lock" "$DEST/status-empty"
-  chmod 644 "$DEST/usb.lock" "$DEST/status-empty"
+  mkdir -p "$DEST/spool" /Library/Logs
+  cp "$APP" "$DEST/sister-printer-app"
+  chmod 755 "$DEST/sister-printer-app"
+  if [[ -x "$STATUS_BIN" ]]; then
+    cp "$STATUS_BIN" "$DEST/sister-status"
+    chmod 755 "$DEST/sister-status"
+  fi
+  chmod 700 "$DEST/spool"
   /bin/bash "$ROOT/Scripts/_privileged-icon.sh" "$ROOT"
-  /bin/bash "$ROOT/Scripts/_privileged-ipp-attrs.sh" "$ROOT"
 
-  if [[ -n "$USB_URI" && "$USB_URI" != "-" ]]; then
-    printf '%s\n' "$USB_URI" > "$DEST/device-uri"
-  elif [[ -f "$DEST/device-uri" ]]; then
-    echo "Keeping the existing device-uri."
-  else
-    echo "WARNING: no USB URI; the IPP command cannot talk to the printer until you write $DEST/device-uri"
-  fi
-  chmod 644 "$DEST/device-uri" 2>/dev/null || true
-  rm -f "$DEST/toner-save"
+  # Retire the ippeveprinter façade. The printer application owns the USB
+  # device, its own IPP attributes and its own supply polling, so the command
+  # script, the attributes file, the device-uri file, the USB lock and the
+  # no-op status job daemon all go away.
+  launchctl bootout "$STATUS_LABEL" 2>/dev/null || true
+  rm -f "$STATUS_PLIST_DEST"
+  rm -rf "$DEST/filter"
+  rm -f "$DEST/printer-attrs.conf" "$DEST/device-uri" "$DEST/usb.lock" \
+        "$DEST/status-empty" "$DEST/toner-save"
 
-  # Printer Application, not a PPD. Remove any leftover classic PPD we used
-  # in earlier SisterHL2030 installs so CUPS cannot pick it by accident.
+  # Printer Application, not a PPD. Remove any classic PPD earlier versions
+  # installed so CUPS cannot pick it by accident.
   rm -f "/Library/Printers/PPDs/Contents/Resources/Sister HL-2030.ppd" \
         "/Library/Printers/PPDs/Contents/Resources/Sister HL-2030.gz" 2>/dev/null || true
 
   cp "$PLIST" "$PLIST_DEST"
   chmod 644 "$PLIST_DEST"
-  cp "$STATUS_PLIST" "$STATUS_PLIST_DEST"
-  chmod 644 "$STATUS_PLIST_DEST"
 
   launchctl bootout "$LABEL" 2>/dev/null || true
   launchctl unload "$PLIST_DEST" 2>/dev/null || true
@@ -97,23 +83,41 @@ set +e
     echo "WARNING: could not start the LaunchDaemon; try: launchctl bootstrap system $PLIST_DEST" >&2
   fi
 
-  launchctl bootout "$STATUS_LABEL" 2>/dev/null || true
-  launchctl unload "$STATUS_PLIST_DEST" 2>/dev/null || true
-  if launchctl bootstrap system "$STATUS_PLIST_DEST" 2>/dev/null; then
-    launchctl enable "$STATUS_LABEL" 2>/dev/null || true
-    launchctl kickstart -k "$STATUS_LABEL" 2>/dev/null || true
-    echo "LaunchDaemon $STATUS_LABEL started."
-  elif launchctl load -w "$STATUS_PLIST_DEST" 2>/dev/null; then
-    echo "Status LaunchDaemon loaded (launchctl load)."
+  ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if nc -z localhost 8631 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" -ne 1 ]]; then
+    echo "WARNING: the printer application is not listening on 8631 yet." >&2
+  fi
+
+  # Add the printer once; the application remembers it in its state file.
+  if "$DEST/sister-printer-app" -u ipp://localhost:8631/ 2>/dev/null | grep -q "$PRINTER"; then
+    echo "Printer '$PRINTER' already registered."
+    if [[ -n "$USB_URI" && "$USB_URI" != "-" ]]; then
+      "$DEST/sister-printer-app" modify -u ipp://localhost:8631/ -d "$PRINTER" \
+        -v "$USB_URI" 2>/dev/null || true
+    fi
+  elif [[ -n "$USB_URI" && "$USB_URI" != "-" ]]; then
+    if "$DEST/sister-printer-app" add -u ipp://localhost:8631/ -d "$PRINTER" \
+        -m sister-hl2030 -v "$USB_URI"; then
+      echo "Printer '$PRINTER' added for $USB_URI."
+    else
+      echo "WARNING: could not add the printer; is the HL-2030 connected?" >&2
+    fi
   else
-    echo "WARNING: could not start the status daemon." >&2
+    echo "WARNING: no USB URI. Connect the HL-2030 and run the installer again."
   fi
 
   echo "Files in $DEST"
-  /usr/bin/file "$DEST/filter/rastertosisterhl2030"
+  /usr/bin/file "$DEST/sister-printer-app"
   rm -f /etc/cups/ppd/localhost.ppd /etc/cups/ppd/HL_2030.ppd
   launchctl kickstart -k system/org.cups.cupsd 2>/dev/null || true
-  echo "SisterHL2030 installed (IPP Printer Application on port 8631)."
+  echo "SisterHL2030 installed (PAPPL printer application on port 8631)."
 ) >"$LOG" 2>&1
 status=$?
 chmod 644 "$LOG" 2>/dev/null || true

@@ -154,6 +154,24 @@ const char* toner_state_label(TonerState s) {
   }
 }
 
+std::string pjl_command(const std::string& command) {
+  return "\x1b%-12345X@PJL\r\n@PJL " + command + "\r\n\x1b%-12345X";
+}
+
+std::string pjl_supply_query() {
+  std::string out;
+  for (const char* cmd : {"INFO STATUS", "INFO PAGECOUNT", "INFO DRUMLIFE",
+                          "ECHO SisterHL2030"}) {
+    out += pjl_command(cmd);
+  }
+  return out;
+}
+
+bool pjl_response_complete(const std::string& text) {
+  return text.find("CODE=") != std::string::npos &&
+         text.find("DRUMLIFE=") != std::string::npos;
+}
+
 PrinterStatus parse_pjl_status(const std::string& text) {
   PrinterStatus st;
   st.have_status = extract_int_field(text, "CODE", &st.code);
@@ -189,8 +207,12 @@ PrinterStatus parse_pjl_status(const std::string& text) {
   return st;
 }
 
+const char* toner_description() { return "Black toner (TN-2000)"; }
+
+const char* drum_description() { return "Drum (DR-2000)"; }
+
 std::string printer_supply_description() {
-  return "Black toner (TN-2000),Drum (DR-2000)";
+  return std::string(toner_description()) + "," + drum_description();
 }
 
 std::string printer_supply_octet(const PrinterStatus& st) {

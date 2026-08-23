@@ -5,6 +5,8 @@
 
 #include "status/usb_printer.h"
 
+#include "status/pjl.h"
+
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOCFPlugIn.h>
 #include <IOKit/IOKitLib.h>
@@ -279,16 +281,13 @@ void drain_in(Opened* o) {
 }
 
 bool response_complete(const std::string& s) {
-  return s.find("CODE=") != std::string::npos &&
-         s.find("DRUMLIFE=") != std::string::npos;
+  return pjl_response_complete(s);
 }
 
 }  // namespace
 
 bool write_pjl(Opened* o, const std::string& command, std::string* error) {
-  std::string payload = "\x1b%-12345X@PJL\r\n@PJL ";
-  payload += command;
-  payload += "\r\n\x1b%-12345X";
+  const std::string payload = pjl_command(command);
   return bulk_write(o, reinterpret_cast<const uint8_t*>(payload.data()),
                     static_cast<uint32_t>(payload.size()), error);
 }

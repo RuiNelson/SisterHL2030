@@ -1,43 +1,32 @@
 #!/bin/bash
-# Copy a newly built encoder + IPP command into the live install.
-# Does not restart the LaunchDaemon: both files are exec'd per job.
+# Copy a freshly built printer application into the live install and restart
+# it. The daemon holds the USB device, so it has to come back for the new
+# binary to take effect.
 export PATH="/usr/sbin:/usr/bin:/bin:/sbin"
 set -euo pipefail
 
 ROOT="${1:-}"
 DEST="/Library/Printers/SisterHL2030"
+LABEL="system/org.sisterhl2030.printer"
 if [[ -z "$ROOT" ]]; then
   echo "Internal use: _privileged-update-filter.sh ROOT" >&2
   exit 2
 fi
 
-FILTER="$ROOT/build/rastertosisterhl2030"
-STATUS_BIN="$ROOT/build/sister-status"
-CMD="$ROOT/src/cups/sister-ipp-command.sh"
-if [[ ! -x "$FILTER" ]]; then
-  echo "Missing the compiled filter: $FILTER" >&2
-  exit 1
-fi
-if [[ ! -x "$STATUS_BIN" ]]; then
-  echo "Missing sister-status: $STATUS_BIN" >&2
-  exit 1
-fi
-if [[ ! -f "$CMD" ]]; then
-  echo "Missing the IPP command: $CMD" >&2
+APP="$ROOT/build/sister-printer-app"
+if [[ ! -x "$APP" ]]; then
+  echo "Missing the printer application: $APP" >&2
+  echo "Build it with: cmake -S . -B build -DSISTER_WITH_PAPPL=ON" >&2
   exit 1
 fi
 
-mkdir -p "$DEST/filter"
-cp "$FILTER" "$DEST/filter/rastertosisterhl2030"
-cp "$STATUS_BIN" "$DEST/filter/sister-status"
-cp "$CMD" "$DEST/filter/sister-ipp-command"
-chmod 755 "$DEST/filter/rastertosisterhl2030" "$DEST/filter/sister-status" \
-          "$DEST/filter/sister-ipp-command"
-rm -f "$DEST/toner-save"
-touch "$DEST/status-empty" "$DEST/usb.lock"
-chmod 644 "$DEST/status-empty" "$DEST/usb.lock"
-launchctl kickstart -k system/org.sisterhl2030.status 2>/dev/null || true
-echo "Filter updated:"
-/usr/bin/file "$DEST/filter/rastertosisterhl2030"
-echo "USB status: $DEST/filter/sister-status"
-echo "IPP command updated: $DEST/filter/sister-ipp-command"
+mkdir -p "$DEST"
+cp "$APP" "$DEST/sister-printer-app"
+chmod 755 "$DEST/sister-printer-app"
+if [[ -x "$ROOT/build/sister-status" ]]; then
+  cp "$ROOT/build/sister-status" "$DEST/sister-status"
+  chmod 755 "$DEST/sister-status"
+fi
+launchctl kickstart -k "$LABEL" 2>/dev/null || true
+echo "Printer application updated:"
+/usr/bin/file "$DEST/sister-printer-app"

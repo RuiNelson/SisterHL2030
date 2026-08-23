@@ -24,12 +24,17 @@
 
 #include "encoder/halftone.h"
 #include "encoder/job.h"
+#include "status/pjl.h"
 
 namespace {
 
 constexpr const char* kDriverName = "sister-hl2030";
 constexpr const char* kDriverDesc = "Brother HL-2030 series";
 constexpr const char* kDeviceId = "MFG:Brother;MDL:HL-2030 series;CMD:PJL,HBP;CLS:PRINTER;";
+constexpr const char* kIconPath = "/Library/Printers/SisterHL2030/icon.png";
+// What AirPrint clients show. The IPP printer name cannot hold spaces, so the
+// friendly name is set separately -- the façade advertised the same string.
+constexpr const char* kDnsSdName = "Brother HL-2030";
 
 // Per-job state. PAPPL hands it back to every raster callback.
 struct JobState {
@@ -92,7 +97,8 @@ std::string pjl_mediatype(const char* pwg_type) {
   if (t == "cardstock") return "THICK";
   if (t == "transparency") return "TRANSPARENCY";
   if (t == "labels") return "THICK";
-  return "REGULAR";
+  if (t == "stationery-letterhead") return "THICK";
+  return "REGULAR";  // "stationery", "auto", "other"
 }
 
 // Quality maps the same way as the CUPS filter: see docs/protocol.md.
@@ -306,6 +312,90 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
   return true;
 }
 
+// Read toner and drum over PJL and hand them to PAPPL. PAPPL calls this when
+// something asks for printer status, so it replaces the whole no-op-job dance
+// the ippeveprinter façade needed to get supply data in.
+bool status_cb(pappl_printer_t* printer) {
+  // Only set it when it differs: assigning re-registers the Bonjour service.
+  char dns_sd[128] = "";
+  papplPrinterGetDNSSDName(printer, dns_sd, sizeof(dns_sd));
+  if (std::strcmp(dns_sd, kDnsSdName) != 0) {
+    papplPrinterSetDNSSDName(printer, kDnsSdName);
+  }
+
+  if (papplPrinterGetState(printer) == IPP_PSTATE_PROCESSING) {
+    return true;  // mid-job: the device is busy, keep the last reading
+  }
+
+  pappl_device_t* device = papplPrinterOpenDevice(printer);
+  if (!device) {
+    return true;  // in use elsewhere; not an error worth failing status over
+  }
+
+  const std::string query = sisterhl2030::pjl_supply_query();
+  papplDeviceWrite(device, query.data(), query.size());
+  papplDeviceFlush(device);
+
+  std::string reply;
+  char buf[2048];
+  for (int i = 0; i < 25 && !sisterhl2030::pjl_response_complete(reply); ++i) {
+    const ssize_t got = papplDeviceRead(device, buf, sizeof(buf));
+    if (got > 0) {
+      reply.append(buf, static_cast<size_t>(got));
+    } else {
+      usleep(100000);
+    }
+  }
+  papplPrinterCloseDevice(printer);
+
+  if (reply.empty()) {
+    papplLogPrinter(printer, PAPPL_LOGLEVEL_DEBUG, "No PJL status reply.");
+    return true;
+  }
+
+  const sisterhl2030::PrinterStatus st = sisterhl2030::parse_pjl_status(reply);
+
+  // The toner sensor is three-state, not a gauge: OK/low/empty become
+  // 100/15/0. Drum is DRUMLIFE against its rated 12 000 pages.
+  pappl_supply_t supplies[2];
+  std::memset(supplies, 0, sizeof(supplies));
+  supplies[0].color = PAPPL_SUPPLY_COLOR_BLACK;
+  supplies[0].type = PAPPL_SUPPLY_TYPE_TONER;
+  supplies[0].is_consumed = true;
+  supplies[0].level = st.toner_percent < 0 ? -1 : st.toner_percent;
+  papplCopyString(supplies[0].description, sisterhl2030::toner_description(),
+                  sizeof(supplies[0].description));
+  supplies[1].color = PAPPL_SUPPLY_COLOR_NO_COLOR;
+  supplies[1].type = PAPPL_SUPPLY_TYPE_OPC;
+  supplies[1].is_consumed = true;
+  supplies[1].level = st.drum_percent < 0 ? -1 : st.drum_percent;
+  papplCopyString(supplies[1].description, sisterhl2030::drum_description(),
+                  sizeof(supplies[1].description));
+  papplPrinterSetSupplies(printer, 2, supplies);
+
+  unsigned add = PAPPL_PREASON_NONE;
+  if (st.toner_empty) {
+    add |= PAPPL_PREASON_TONER_EMPTY;
+  } else if (st.toner_low) {
+    add |= PAPPL_PREASON_TONER_LOW;
+  }
+  if (st.drum_empty) {
+    add |= PAPPL_PREASON_MARKER_SUPPLY_EMPTY;
+  } else if (st.drum_low) {
+    add |= PAPPL_PREASON_MARKER_SUPPLY_LOW;
+  }
+  const unsigned clear = PAPPL_PREASON_TONER_LOW | PAPPL_PREASON_TONER_EMPTY |
+                         PAPPL_PREASON_MARKER_SUPPLY_LOW |
+                         PAPPL_PREASON_MARKER_SUPPLY_EMPTY;
+  papplPrinterSetReasons(printer, static_cast<pappl_preason_t>(add),
+                         static_cast<pappl_preason_t>(clear & ~add));
+
+  papplLogPrinter(printer, PAPPL_LOGLEVEL_DEBUG,
+                  "Toner %d%%, drum %d%% (page count %d).", supplies[0].level,
+                  supplies[1].level, st.pagecount);
+  return true;
+}
+
 // A4 first: this printer is sold with A4 trays in the region it targets.
 const char* const kMedia[] = {
     "iso_a4_210x297mm", "na_letter_8.5x11in", "na_legal_8.5x14in",
@@ -341,6 +431,8 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
   driver_data->rendpage_cb = rendpage;
   driver_data->rendjob_cb = rendjob;
   driver_data->printfile_cb = printfile;
+  driver_data->status_cb = status_cb;
+  driver_data->has_supplies = true;
   driver_data->format = "application/octet-stream";
 
   // Always take 8-bit gray and dither it ourselves: Atkinson here
@@ -359,29 +451,43 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
   driver_data->sides_default = PAPPL_SIDES_ONE_SIDED;
   driver_data->orient_default = IPP_ORIENT_NONE;
   driver_data->quality_default = IPP_QUALITY_NORMAL;
+  // Print at 100%: the whole point of the 0.01 mm margins below is that the
+  // dialog must not decide to scale-to-fit.
+  driver_data->scaling_default = PAPPL_SCALING_NONE;
+
+  // The queue artwork, when installed. PAPPL serves it for all three sizes.
+  if (access(kIconPath, R_OK) == 0) {
+    for (auto& icon : driver_data->icons) {
+      papplCopyString(icon.filename, kIconPath, sizeof(icon.filename));
+    }
+  }
 
   driver_data->num_resolution = 2;
   driver_data->x_resolution[0] = driver_data->y_resolution[0] = 300;
   driver_data->x_resolution[1] = driver_data->y_resolution[1] = 600;
   driver_data->x_default = driver_data->y_default = 600;
 
-  // 0.01 mm, not 0: a zero margin reads as borderless and the macOS print
-  // dialog then scales to fit. Same reasoning as ipp/printer-attrs.conf.
+  // 0.01 mm, not 0: a zero margin reads as borderless, and the macOS print
+  // dialog then scale-to-fits at about 96% instead of printing at 100%.
+  // The laser clips a few millimetres at the physical edge regardless.
   driver_data->left_right = 1;
   driver_data->bottom_top = 1;
 
   driver_data->num_media = static_cast<int>(sizeof(kMedia) / sizeof(kMedia[0]));
   std::memcpy(const_cast<char**>(driver_data->media), kMedia, sizeof(kMedia));
 
-  driver_data->num_source = 2;
+  driver_data->num_source = 3;
   driver_data->source[0] = "main";
   driver_data->source[1] = "manual";
+  driver_data->source[2] = "by-pass-tray";
 
-  driver_data->num_type = 4;
+  driver_data->num_type = 6;
   driver_data->type[0] = "stationery";
-  driver_data->type[1] = "envelope";
-  driver_data->type[2] = "cardstock";
-  driver_data->type[3] = "transparency";
+  driver_data->type[1] = "stationery-letterhead";
+  driver_data->type[2] = "envelope";
+  driver_data->type[3] = "cardstock";
+  driver_data->type[4] = "labels";
+  driver_data->type[5] = "transparency";
 
   papplCopyString(driver_data->media_default.size_name, "iso_a4_210x297mm",
                   sizeof(driver_data->media_default.size_name));
@@ -408,7 +514,14 @@ int main(int argc, char* argv[]) {
       {kDriverName, kDriverDesc, kDeviceId, nullptr},
   };
 
-  return papplMainloop(argc, argv, "1.0", nullptr,
+  // The footer is not optional: PAPPL passes it to a string compare when it
+  // renders any web page, and a null one segfaults the daemon.
+  static const char* kFooter =
+      "Copyright &copy; 2026 Rui Nelson. "
+      "<a href=\"https://github.com/RuiNelson/SisterHL2030\">SisterHL2030</a> "
+      "is free software under the GNU GPL v2 or later.";
+
+  return papplMainloop(argc, argv, "1.0", kFooter,
                        static_cast<int>(sizeof(drivers) / sizeof(drivers[0])),
                        drivers, nullptr, driver_cb, nullptr, nullptr, nullptr,
                        nullptr, nullptr);

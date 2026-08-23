@@ -107,7 +107,8 @@ if(SISTER_WITH_PAPPL)
 
   add_executable(sister-printer-app src/pappl/sister_app.cpp)
   target_include_directories(sister-printer-app PRIVATE src ${PAPPL_PREFIX}/include)
-  target_link_libraries(sister-printer-app PRIVATE sisterhl2030_encoder)
+  target_link_libraries(sister-printer-app PRIVATE sisterhl2030_encoder
+                                                     sisterhl2030_status)
   set_target_properties(sister-printer-app PROPERTIES LINK_FLAGS "${PAPPL_LINK_FLAGS}")
   target_compile_options(sister-printer-app PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra>
@@ -127,8 +128,13 @@ add_test(NAME status COMMAND test_status)
 # No PPD is installed: the queue is IPP Everywhere, and the installer deletes
 # any classic PPD left by earlier versions. ppd/Sister-HL-2030.ppd is kept in
 # the tree as a reference for the PJL/PCL options only.
-set(SISTER_INSTALL_FILTERDIR "/Library/Printers/SisterHL2030/filter")
-install(TARGETS rastertosisterhl2030 RUNTIME DESTINATION ${SISTER_INSTALL_FILTERDIR})
+# What an install consists of: the printer application and the status CLI.
+# rastertosisterhl2030 is deliberately not installed -- the classic CUPS filter
+# path is retired, and the binary is kept only as an encoder reference.
+set(SISTER_INSTALL_DIR "/Library/Printers/SisterHL2030")
 if(APPLE)
-  install(TARGETS sister-status RUNTIME DESTINATION ${SISTER_INSTALL_FILTERDIR})
+  install(TARGETS sister-status RUNTIME DESTINATION ${SISTER_INSTALL_DIR})
+endif()
+if(SISTER_WITH_PAPPL)
+  install(TARGETS sister-printer-app RUNTIME DESTINATION ${SISTER_INSTALL_DIR})
 endif()

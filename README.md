@@ -30,7 +30,7 @@ send Brother's compressed stream over USB.
 | Native `arm64` raster encoder (mode 1030) | prints on USB HL-2030 |
 | Toner / drum levels via USB PJL | shown in Supply Levels |
 | CLI `sister-rawtobr` (PBM → job stream) | done |
-| PAPPL printer application (IPP Everywhere façade) | building; USB device access open |
+| PAPPL printer application (IPP Everywhere) | prints, supplies, AirPrint |
 | Signed macOS `.pkg` | later |
 
 This is not a port of the 2005 i386 `rawtobr2` binary. That encoder is a
@@ -56,6 +56,17 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+That builds the encoder, the tests and the CLI tools. The driver itself is a
+PAPPL printer application, which is off by default because it downloads and
+builds PAPPL 1.4.x (pinned by checksum) the first time:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON
+cmake --build build --target sister-printer-app
+```
+
+The installer passes that flag for you.
 
 On Apple Silicon this produces native `arm64` binaries. A universal extra
 slice can be added later with `CMAKE_OSX_ARCHITECTURES=arm64;x86_64`.
@@ -84,20 +95,35 @@ Brother drivers, so they cannot be stacked. macOS will ask for an
 administrator password on each step.
 
 The queue is created as **IPP Everywhere** (`ipp://127.0.0.1:8631/ipp/print`)
-talking to a local `ippeveprinter` LaunchDaemon. That is the replacement
+talking to the SisterHL2030 [PAPPL](https://github.com/michaelrsweet/pappl)
+printer application, which runs as a LaunchDaemon. That is the replacement
 for a CUPS PPD, which `lpadmin` already reports as deprecated. The daemon
-runs the arm64 encoder and sends the job to the HL-2030 over USB.
+owns the USB device: it rasterizes, halftones, encodes and writes the job
+itself, and reads toner and drum levels over PJL on the same connection.
+
+It serves a web page of its own at `http://localhost:8631/` with status,
+supply levels and media settings, and advertises the printer on the LAN for
+AirPrint as "Brother HL-2030".
+
+To see what a job would look like without printing it:
+
+```sh
+"Scripts/Preview PAPPL Render.sh" some-image.png normal
+```
 
 ## Architecture (v1)
 
 ```
-document → raster (1-bit) → sister encoder → USB
+document → PAPPL raster (sRGB) → luma → Atkinson → mode 1030 → USB
 ```
 
-The product architecture is a [PAPPL](https://github.com/michaelrsweet/pappl)
-printer application: a userspace IPP Everywhere printer that CUPS on modern
-macOS talks to without a PPD. Classic CUPS filters are deprecated since
-CUPS 2.3 / macOS 11.
+The driver is a [PAPPL](https://github.com/michaelrsweet/pappl) printer
+application: a userspace IPP Everywhere printer that CUPS on modern macOS
+talks to without a PPD. Classic CUPS filters are deprecated since CUPS 2.3 /
+macOS 11.
+
+`rastertosisterhl2030` remains as a classic CUPS filter, no longer installed,
+kept as a reference path for comparing encoder output.
 
 ## Hardware
 

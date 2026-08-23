@@ -40,6 +40,15 @@ struct PrinterStatus {
   bool drum_empty = false;
 };
 
+// One PJL query, wrapped in UELs, ready to write to the printer.
+std::string pjl_command(const std::string& command);
+
+// The supply queries, as one payload. ECHO closes the transaction.
+std::string pjl_supply_query();
+
+// True once a reply carries everything pjl_supply_query() asked for.
+bool pjl_response_complete(const std::string& text);
+
 // PJL INFO response text (one or more @PJL INFO … blocks, form-feed separated).
 PrinterStatus parse_pjl_status(const std::string& text);
 
@@ -49,6 +58,10 @@ const char* toner_state_label(TonerState s);
 
 std::string printer_supply_octet(const PrinterStatus& st);
 std::string printer_supply_description();
+
+// Consumable names, so every surface calls them the same thing.
+const char* toner_description();
+const char* drum_description();
 
 // ippeveprinter stderr lines (ATTR: / STATE:), newline-terminated.
 std::string ippeve_attr_lines(const PrinterStatus& st);

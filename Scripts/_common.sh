@@ -6,8 +6,9 @@ BROTHER_DIR="/Library/Printers/Brother"
 BROTHER_FILTER="$BROTHER_DIR/Filter/rastertobrother2030.bundle/Contents/MacOS/rastertobrother2030"
 PPD_DIR="/Library/Printers/PPDs/Contents/Resources"
 SISTER_ROOT="/Library/Printers/SisterHL2030"
-SISTER_FILTERDIR="$SISTER_ROOT/filter"
-SISTER_FILTER="$SISTER_FILTERDIR/rastertosisterhl2030"
+SISTER_APP="$SISTER_ROOT/sister-printer-app"
+# Where the retired ippeveprinter façade kept its filter.
+SISTER_OLD_FILTER="$SISTER_ROOT/filter/rastertosisterhl2030"
 DEFAULT_QUEUE="Brother_HL_2030_series"
 
 if [[ -z "${SCRIPT_DIR:-}" ]]; then
@@ -97,8 +98,12 @@ has_official_brother() {
 # they are not a reason to abort.
 previous_sister_reasons() {
   local found=1
-  if [[ -x "$SISTER_FILTER" ]]; then
-    echo "  • Filter $SISTER_FILTER"
+  if [[ -x "$SISTER_OLD_FILTER" ]]; then
+    echo "  • ippeveprinter façade filter $SISTER_OLD_FILTER"
+    found=0
+  fi
+  if [[ -f "$SISTER_ROOT/printer-attrs.conf" ]]; then
+    echo "  • ippeveprinter attributes file (replaced by the printer application)"
     found=0
   fi
   if [[ -f "$PPD_DIR/Sister HL-2030.ppd" || -f "$PPD_DIR/Sister HL-2030.gz" ]]; then

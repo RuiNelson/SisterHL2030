@@ -91,17 +91,17 @@ fi
 echo "CMake and compiler found."
 echo
 
-echo "${c_bold}3/4  Compiling the encoder for this Mac…${c_reset}"
-echo "${c_dim}(takes less than a minute the first time)${c_reset}"
+echo "${c_bold}3/4  Compiling the printer application for this Mac…${c_reset}"
+echo "${c_dim}(the first build also downloads and builds PAPPL, a few minutes)${c_reset}"
 echo
 cd "$ROOT"
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target rastertosisterhl2030 sister-status -j
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON
+cmake --build build --target sister-printer-app sister-status -j
 echo
-if ! file "$ROOT/build/rastertosisterhl2030" | grep -q 'arm64\|x86_64\|executable'; then
-  die "The build did not produce the filter. See the messages above."
+if ! file "$ROOT/build/sister-printer-app" | grep -q 'arm64\|x86_64\|executable'; then
+  die "The build did not produce the printer application. See the messages above."
 fi
-echo "${c_green}Encoder compiled.${c_reset}  $(file -b "$ROOT/build/rastertosisterhl2030")"
+echo "${c_green}Printer application compiled.${c_reset}  $(file -b "$ROOT/build/sister-printer-app")"
 echo
 
 uri="$(detect_hl2030_uri || true)"
@@ -131,11 +131,11 @@ run_as_admin "$SCRIPT_DIR/_privileged-install.sh" \
   "$ROOT" "$queue" "${uri:--}"
 
 echo
-if [[ ! -x "$SISTER_FILTER" ]]; then
-  die "The install did not leave the filter at $SISTER_FILTER."
+if [[ ! -x "$SISTER_APP" ]]; then
+  die "The install did not leave the printer application at $SISTER_APP."
 fi
 
-echo "Waiting for the IPP Everywhere service on localhost:8631…"
+echo "Waiting for the printer application on localhost:8631…"
 ipp_ready=0
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
   if /usr/bin/nc -z localhost 8631 2>/dev/null; then
@@ -145,7 +145,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
   sleep 0.5
 done
 if [[ "$ipp_ready" -ne 1 ]]; then
-  echo "${c_yellow}The IPP service is not listening yet. Setting up the queue anyway.${c_reset}"
+  echo "${c_yellow}The printer application is not listening yet. Setting up the queue anyway.${c_reset}"
   echo "If the printer does not show up, run this installer again."
 fi
 
@@ -173,13 +173,13 @@ remove_duplicate_sister_queues "$queue"
 echo
 echo "${c_green}${c_bold}Sister HL-2030 installed.${c_reset}"
 echo
-echo "This is no longer a classic CUPS PPD (that is what macOS reports as"
-echo "deprecated). CUPS speaks IPP Everywhere to SisterHL2030, and the arm64"
-echo "encoder speaks to the HL-2030 over USB."
+echo "This is a PAPPL printer application, not a classic CUPS PPD (that is what"
+echo "macOS reports as deprecated). CUPS speaks IPP Everywhere to SisterHL2030,"
+echo "and the arm64 encoder speaks to the HL-2030 over USB."
 echo
-echo "Filter: $SISTER_FILTER"
-if [[ -x "$SISTER_FILTER" ]]; then
-  echo "        $(file -b "$SISTER_FILTER")"
+echo "Printer application: $SISTER_APP"
+if [[ -x "$SISTER_APP" ]]; then
+  echo "        $(file -b "$SISTER_APP")"
 fi
 echo
 echo "To test it: open a page in Preview and print to"
@@ -197,6 +197,9 @@ echo "Supply levels: System Settings → Printers & Scanners"
 echo "→ Brother HL-2030 series → Options & Supplies → Supply Levels."
 echo "The HL-2030 toner only reports OK / low / empty (it is not a continuous"
 echo "percentage). The drum is estimated from the page count (about 12,000)."
+echo
+echo "The printer application also has a web page of its own, with status,"
+echo "supply levels and media settings:  http://localhost:8631/"
 echo
 echo "If the page comes out blank or inverted, open an issue on the"
 echo "SisterHL2030 repository and describe what you saw."
