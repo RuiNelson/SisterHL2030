@@ -80,6 +80,8 @@ bool publish_via_ipp_job(std::string* error) {
   }
   const char* doc = kDummyDoc;
   if (access(doc, R_OK) != 0) {
+    close(fd);
+    unlink(ipp_path);
     *error = "missing icon.png for dummy IPP job";
     return false;
   }
@@ -215,20 +217,14 @@ int main(int argc, char** argv) {
   std::string raw;
   std::string err;
   if (!sisterhl2030::pjl_query_supplies(serial, &raw, &err)) {
-    if (mode == Mode::publish) {
-      std::fprintf(stderr, "sister-status: %s\n", err.c_str());
-      return 0;
-    }
+    // mode == Mode::publish already returned above; only human/json/ipp reach here.
     std::fprintf(stderr, "ERROR: %s\n", err.c_str());
     return 1;
   }
 
   const sisterhl2030::PrinterStatus st = sisterhl2030::parse_pjl_status(raw);
   if (!st.have_status && !st.have_drumlife && !st.have_pagecount) {
-    if (mode == Mode::publish) {
-      std::fprintf(stderr, "sister-status: empty PJL response\n");
-      return 0;
-    }
+    // mode == Mode::publish already returned above; only human/json/ipp reach here.
     std::fprintf(stderr, "ERROR: empty PJL response\n");
     return 1;
   }

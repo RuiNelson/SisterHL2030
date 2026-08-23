@@ -19,10 +19,12 @@ fi
 if [[ -x "${ROOT}/build/sister-printer-app" ]]; then
   cp "${ROOT}/build/sister-printer-app" "$DEST/sister-printer-app"
   chmod 755 "$DEST/sister-printer-app"
+  codesign --force --sign - "$DEST/sister-printer-app"
 fi
 if [[ -x "${ROOT}/build/sister-status" ]]; then
   cp "${ROOT}/build/sister-status" "$DEST/sister-status"
   chmod 755 "$DEST/sister-status"
+  codesign --force --sign - "$DEST/sister-status"
 fi
 cp "$PLIST_SRC" "$PLIST_DEST"
 chmod 644 "$PLIST_DEST"

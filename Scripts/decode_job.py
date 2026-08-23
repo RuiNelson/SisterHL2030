@@ -6,9 +6,29 @@ paper -- in particular whether an image was halftoned -- without printing.
 See docs/protocol.md for the format.
 """
 
+import re
 import struct
 import sys
 import zlib
+
+
+# Width x height in pixels at 600 dpi, from docs/protocol.md's "Paper size
+# at 600 dpi" table (recovered from the blob's `paperinf`). Used only as a
+# fallback bpl estimate -- see pjl_bpl_hint() below for why it is not exact.
+PAPER_SIZES_600DPI = {
+    "A4": (4969, 7015),
+    "LETTER": (5100, 6600),
+    "LEGAL": (5100, 8400),
+    "EXECUTIVE": (4350, 6300),
+    "A5": (3505, 4960),
+    "A6": (2479, 3505),
+    "B5": (4159, 5899),
+    "B6": (2950, 4160),
+    "C5": (3835, 5410),
+    "DL": (2599, 5194),
+    "COM10": (2475, 5700),
+    "MONARCH": (2325, 4500),
+}
 
 
 def read_overflow(data, i):
@@ -69,8 +89,69 @@ def decode_line(data, i, ref, bpl):
     return line, i, bpl
 
 
+def pjl_bpl_hint(data, header_end):
+    """Best-effort bpl guess from the PJL page header (PAPER / RESOLUTION /
+    RAS1200MODE), for the rare page where no band-start line ever reveals
+    the true width on its own (see decode()).
+
+    This is only an estimate: sister-rawtobr and similar raw-testing tools
+    write whatever PAPER name the caller asked for without checking it
+    against the actual pixel data, and even for real jobs the printer's
+    internal `paperinf` table (this function's source, see
+    docs/protocol.md) does not always agree byte-for-byte with the
+    CUPS/PAPPL raster width for the same nominal page size. Prefer the
+    band-start signal whenever it's available.
+    """
+    header = data[:header_end]
+    m_paper = re.search(rb"@PJL SET PAPER\s*=\s*(\S+)", header)
+    if not m_paper:
+        return None
+    paper = m_paper.group(1).decode("ascii", "replace").upper()
+    size = PAPER_SIZES_600DPI.get(paper)
+    if size is None:
+        print("decode_job: unrecognized PJL PAPER=%s, cannot estimate "
+              "width from it" % paper, file=sys.stderr)
+        return None
+    width_600 = size[0]
+
+    m_ras = re.search(rb"@PJL SET RAS1200MODE\s*=\s*(TRUE|OFF|FALSE)", header)
+    if m_ras and m_ras.group(1) == b"TRUE":
+        # Fine/HQ1200: Atkinson runs at 600 dpi, then the 1-bit page is
+        # nearest-neighbour upsampled to the doubled grid before it hits
+        # the wire (docs/protocol.md, "Paper size at 600 dpi").
+        width_px = width_600 * 2
+    else:
+        m_res = re.search(rb"@PJL SET RESOLUTION\s*=\s*(\d+)", header)
+        resolution = int(m_res.group(1)) if m_res else 600
+        if resolution >= 600:
+            width_px = width_600
+        else:
+            width_px = width_600 // 2  # matches box_downsample_2x's floor
+
+    return (width_px + 7) // 8
+
+
 def decode(data):
-    """Return (rows, bpl) for the first page in the job."""
+    """Return (rows, bpl) for the first page in the job.
+
+    bpl (bytes per line) is never carried explicitly in the band data: a
+    delta-encoded line omits any trailing bytes that match the reference
+    line, so a decoded line can come out shorter than the true page width
+    whenever the inked content doesn't reach the right edge. Latching bpl
+    from whichever row happens to be the first non-blank one (the old
+    approach) is wrong for exactly that reason -- that row may be a delta
+    line that stops short.
+
+    The one place width IS unambiguous is the first line of every band:
+    job.cc always writes it via the no-reference/"Absolute" path (never a
+    delta), and line.cc's no-reference encoder always emits the whole
+    line, trailing zeros included, unless the line is genuinely blank (see
+    docs/protocol.md). So: scan band-start lines for the first non-blank
+    one and trust its length -- it is guaranteed complete by construction.
+    Only if no band-start line ever reveals it (a page whose content
+    never touches a band boundary) do we fall back to a PJL-header
+    estimate, and finally to the old first-non-blank-row heuristic.
+    """
     start = data.find(b"\x1b*b1030m")
     if start < 0:
         raise SystemExit("no mode-1030 data found (not a HL-2030 job?)")
@@ -79,6 +160,7 @@ def decode(data):
     rows = []
     ref = None
     bpl = None
+    first_nonblank_len = None  # old heuristic, kept as last-resort fallback
     while i < len(data):
         if data[i:i + 5] == b"1030M":
             break
@@ -94,20 +176,42 @@ def decode(data):
         nlines = data[i + 1]
         i += 2
         end = i + nbytes - 2
+        band_start = True
         while i < end:
             line, i, bpl = decode_line(data, i, ref, bpl)
-            # An all-white line carries no length, so it cannot tell us the
-            # line width; wait for a real one rather than latching zero.
-            if bpl is None and len(line) > 0:
-                bpl = len(line)
+            if len(line) > 0:
+                if first_nonblank_len is None:
+                    first_nonblank_len = len(line)
+                # Only a band-start line is guaranteed complete; a mid-band
+                # delta line can be legitimately shorter than the page.
+                if band_start and bpl is None:
+                    bpl = len(line)
             if bpl is not None and len(line) < bpl:
                 line.extend(bytearray(bpl - len(line)))
             rows.append(bytes(line))
             ref = line
+            band_start = False
         if len(rows) and nlines == 0:
             break
+
+    if bpl is None:
+        hint = pjl_bpl_hint(data, start)
+        if hint is not None:
+            print("decode_job: no band-start line revealed the page width; "
+                  "estimating bpl=%d from the PJL header (PAPER/RESOLUTION/"
+                  "RAS1200MODE) -- treat this as a best-effort guess" % hint,
+                  file=sys.stderr)
+            bpl = hint
+        elif first_nonblank_len:
+            print("decode_job: no band-start line and no usable PJL header; "
+                  "falling back to the first non-blank row's length "
+                  "(bpl=%d) -- this can be wrong if that row doesn't reach "
+                  "the true right edge" % first_nonblank_len, file=sys.stderr)
+            bpl = first_nonblank_len
+
     bpl = bpl or 0
-    # Pad any leading blank lines now that the width is known.
+    # Pad any leading blank lines / short delta lines now that the width
+    # is known.
     rows = [r + bytes(bpl - len(r)) if len(r) < bpl else r for r in rows]
     return rows, bpl
 
@@ -161,8 +265,14 @@ def main():
 
     print("rows          : %d" % len(rows))
     print("bytes/line    : %d  (width %d px)" % (bpl, width))
-    print("black coverage: %.1f%%" % (100.0 * black / total))
-    print("mixed bytes   : %.1f%%  <- dither patterns" % (100.0 * mixed / nbytes))
+    if total == 0:
+        print("black coverage: n/a (no rows decoded)")
+    else:
+        print("black coverage: %.1f%%" % (100.0 * black / total))
+    if nbytes == 0:
+        print("mixed bytes   : n/a (no rows decoded)")
+    else:
+        print("mixed bytes   : %.1f%%  <- dither patterns" % (100.0 * mixed / nbytes))
 
     if len(args) > 1:
         out = args[1]

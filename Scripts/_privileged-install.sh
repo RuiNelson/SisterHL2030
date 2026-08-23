@@ -103,7 +103,7 @@ set +e
   fi
 
   # Add the printer once; the application remembers it in its state file.
-  if "$DEST/sister-printer-app" -u ipp://localhost:8631/ 2>/dev/null | grep -q "$PRINTER"; then
+  if "$DEST/sister-printer-app" printers -u ipp://localhost:8631/ 2>/dev/null | grep -qx "$PRINTER"; then
     echo "Printer '$PRINTER' already registered."
     if [[ -n "$USB_URI" && "$USB_URI" != "-" ]]; then
       "$DEST/sister-printer-app" modify -u ipp://localhost:8631/ -d "$PRINTER" \

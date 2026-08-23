@@ -5,7 +5,7 @@ Lets the consumables path be exercised with no printer attached: point a
 printer at socket://127.0.0.1:PORT and this replies the way the real one
 does. Print data is swallowed and optionally saved.
 
-usage: _fake_printer.py PORT [OUTFILE] [--toner ok|low|empty] [--drumlife N]
+usage: _fake_printer.py PORT [OUTFILE] [--toner=ok|low|empty] [--drumlife=N]
 """
 
 import socket

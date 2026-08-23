@@ -110,11 +110,11 @@ std::string pjl_mediatype(const char* pwg_type) {
 }
 
 int raster_dpi_of(const pappl_pr_options_t* options) {
-  if (options->printer_resolution[0] > 0) {
-    return options->printer_resolution[0];
-  }
   if (options->header.HWResolution[0] > 0) {
     return static_cast<int>(options->header.HWResolution[0]);
+  }
+  if (options->printer_resolution[0] > 0) {
+    return options->printer_resolution[0];
   }
   return 600;
 }
@@ -418,11 +418,21 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
 // something asks for printer status, so it replaces the whole no-op-job dance
 // the ippeveprinter façade needed to get supply data in.
 bool status_cb(pappl_printer_t* printer) {
-  // Only set it when it differs: assigning re-registers the Bonjour service.
-  char dns_sd[128] = "";
-  papplPrinterGetDNSSDName(printer, dns_sd, sizeof(dns_sd));
-  if (std::strcmp(dns_sd, kDnsSdName) != 0) {
-    papplPrinterSetDNSSDName(printer, kDnsSdName);
+  // Set the friendly Bonjour name once. status_cb runs about once a second;
+  // re-asserting the name every tick would fight PAPPL's own DNS-SD collision
+  // handling (dnssd.c), which renames the service if another device on the
+  // LAN already advertises "Brother HL-2030" -- forcing our name straight
+  // back would retrigger that same collision forever. driver_cb can't do
+  // this instead: it only gets a pappl_system_t*, not the pappl_printer_t*
+  // that papplPrinterSetDNSSDName needs, and runs before the printer exists.
+  static bool dns_sd_name_set = false;
+  if (!dns_sd_name_set) {
+    char dns_sd[128] = "";
+    papplPrinterGetDNSSDName(printer, dns_sd, sizeof(dns_sd));
+    if (std::strcmp(dns_sd, kDnsSdName) != 0) {
+      papplPrinterSetDNSSDName(printer, kDnsSdName);
+    }
+    dns_sd_name_set = true;
   }
 
   if (papplPrinterGetState(printer) == IPP_PSTATE_PROCESSING) {
