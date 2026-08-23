@@ -142,6 +142,30 @@ int main() {
       sisterhl2030::scale_coverage(v, 2, 1.5f);
       expect(v[0] == 150 && v[1] == 255, "gain >1 darkens and clamps");
     }
+    {
+      std::vector<uint8_t> t(64 * 48, 128);
+      atkinson(t.data(), 64, 48);
+      int black = 0;
+      for (uint8_t v : t) {
+        if (v >= 128) ++black;
+      }
+      expect(black == 1536, "streaming Atkinson matches full-buffer mid-grey");
+    }
+    {
+      std::vector<uint8_t> t(17 * 9, 90);
+      atkinson(t.data(), 17, 9);
+      int black = 0;
+      for (uint8_t v : t) {
+        if (v >= 128) ++black;
+      }
+      expect(black == 44, "streaming Atkinson matches full-buffer grey-90");
+    }
+    {
+      uint8_t row[4] = {255, 0, 255, 0};
+      uint8_t packed[1] = {0};
+      sisterhl2030::pack_toner_row_2x(row, 4, packed);
+      expect(packed[0] == 0xCC, "2x pack doubles bits (11001100)");
+    }
   }
 
   // White line compresses to a single 0xFF.

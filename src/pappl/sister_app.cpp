@@ -365,32 +365,46 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
 
   // HQ1200's pixel grid is twice 600 dpi. Dither at 600 first: Atkinson on
   // a 1200 dpi A4 page is ~140 million pixels and a 500 MB error buffer,
-  // which never finishes. Pixel-double the 1-bit result so RAS1200MODE
-  // still prints at full size.
-  if (state->params.resolution == 1200 && state->raster_dpi < 900) {
-    sisterhl2030::nn_upsample_2x(state->toner, width, height);
+  // which never finishes. Pixel-double the 1-bit rows as they encode so
+  // RAS1200MODE still prints at full size without a 4x 8-bit page.
+  const bool x2 = state->params.resolution == 1200 && state->raster_dpi < 900;
+  if (x2) {
     papplLogJob(job, PAPPL_LOGLEVEL_INFO,
-                "HQ1200 upsampled to %ux%u after dither.", width, height);
+                "HQ1200 encoding as %ux%u after dither.", width * 2, height * 2);
   }
 
-  const unsigned bpl = (width + 7) / 8;
-  std::vector<uint8_t> packed(static_cast<size_t>(bpl) * height, 0);
-  for (unsigned y = 0; y < height; ++y) {
-    sisterhl2030::pack_toner_row(
-        state->toner.data() + static_cast<size_t>(y) * width, width,
-        packed.data() + static_cast<size_t>(y) * bpl);
-  }
-
-  unsigned row = 0;
+  const unsigned out_w = x2 ? width * 2 : width;
+  const unsigned out_h = x2 ? height * 2 : height;
+  const unsigned bpl = (out_w + 7) / 8;
+  std::vector<uint8_t> packed(bpl, 0);
+  unsigned src_row = 0;
+  unsigned dup = 0;
   auto next_line = [&](std::vector<uint8_t>& out) {
-    if (row >= height) return false;
-    const uint8_t* src = packed.data() + static_cast<size_t>(row) * bpl;
-    out.assign(src, src + bpl);
-    ++row;
+    if (src_row >= height) return false;
+    if (!x2) {
+      sisterhl2030::pack_toner_row(
+          state->toner.data() + static_cast<size_t>(src_row) * width, width,
+          packed.data());
+      out.assign(packed.begin(), packed.end());
+      ++src_row;
+      return true;
+    }
+    if (dup == 0) {
+      sisterhl2030::pack_toner_row_2x(
+          state->toner.data() + static_cast<size_t>(src_row) * width, width,
+          packed.data());
+    }
+    out.assign(packed.begin(), packed.end());
+    if (dup == 0) {
+      dup = 1;
+    } else {
+      dup = 0;
+      ++src_row;
+    }
     return true;
   };
 
-  state->job->encode_page(state->params, static_cast<int>(height),
+  state->job->encode_page(state->params, static_cast<int>(out_h),
                           static_cast<int>(bpl), next_line);
   fflush(state->stream);
   // Drop the page buffer now: HQ1200's upsampled toner is ~140 MB, and the
@@ -422,8 +436,8 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
   papplJobSetData(job, nullptr);
   delete state;
 #ifdef __APPLE__
-  // After a page the malloc zone still holds the toner/Atkinson arenas
-  // (~175 MB peak). Hand them back so idle RSS is idle RSS.
+  // After a page the malloc zone still holds the 8-bit toner arena.
+  // Hand it back so idle RSS is idle RSS.
   malloc_zone_pressure_relief(nullptr, 0);
 #endif
   return true;
@@ -447,6 +461,11 @@ bool status_cb(pappl_printer_t* printer) {
     if (std::strcmp(dns_sd, kDnsSdName) != 0) {
       papplPrinterSetDNSSDName(printer, kDnsSdName);
     }
+    // One USB laser: no parallel jobs, and do not keep a hundred completed
+    // IPP jobs in RAM after they have finished.
+    papplPrinterSetMaxActiveJobs(printer, 1);
+    papplPrinterSetMaxCompletedJobs(printer, 16);
+    papplPrinterSetMaxPreservedJobs(printer, 0);
     dns_sd_name_set = true;
   }
 
@@ -686,6 +705,10 @@ pappl_system_t* make_system(int num_options, cups_option_t* options,
   }
   papplSystemSetMaxClients(system, 16);
   papplSystemSetMaxSubscriptions(system, 8);
+  // Default is 1 GiB uncompressed. Legal @ 600 dpi sGray is ~40 MB; this
+  // still accepts a photo submitted to the web UI without letting a huge
+  // PNG pin a gigabyte.
+  papplSystemSetMaxImageSize(system, 96u * 1024u * 1024u, 8192, 8192);
   return system;
 }
 

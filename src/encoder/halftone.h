@@ -18,6 +18,10 @@ void atkinson(uint8_t* toner, unsigned width, unsigned height);
 // Pack one 0/255 toner row to 1-bit MSB-first (1 = black).
 void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed);
 
+// Same packing, each pixel emitted twice (HQ1200 nearest-neighbour of 1-bit).
+// `packed` must hold (2*width+7)/8 bytes.
+void pack_toner_row_2x(const uint8_t* toner_row, unsigned width, uint8_t* packed);
+
 // sRGB 8-bit RGB → toner 0..255 (perceptual Rec.709 luma, highlight-preserving laser curve).
 uint8_t rgb_to_toner(uint8_t r, uint8_t g, uint8_t b);
 

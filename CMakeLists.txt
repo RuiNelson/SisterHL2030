@@ -37,6 +37,26 @@ if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
   set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS architectures" FORCE)
 endif()
 
+# Smallest shipping code. CMake's Release default is -O3 (speed, larger
+# __text). Atkinson's extra RAM during a job is transient and fine.
+string(REPLACE "-O3" "-Os" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}" CACHE STRING
+    "Flags used by the CXX compiler during RELEASE builds." FORCE)
+
+function(sister_compile_small tgt)
+  target_compile_options(${tgt} PRIVATE
+    $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-fno-exceptions;-fno-rtti>)
+endfunction()
+
+function(sister_strip tgt)
+  if(NOT CMAKE_STRIP)
+    return()
+  endif()
+  add_custom_command(TARGET ${tgt} POST_BUILD
+    COMMAND ${CMAKE_STRIP} "$<TARGET_FILE:${tgt}>"
+    COMMENT "Stripping ${tgt}")
+endfunction()
+
 add_library(sisterhl2030_encoder
   src/encoder/job.cc
   src/encoder/line.cc
@@ -46,12 +66,17 @@ target_include_directories(sisterhl2030_encoder PUBLIC src)
 target_compile_options(sisterhl2030_encoder PRIVATE
   $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
 )
+sister_compile_small(sisterhl2030_encoder)
 
 add_executable(sister-rawtobr src/tools/rawtobr.cpp)
 target_link_libraries(sister-rawtobr PRIVATE sisterhl2030_encoder)
+sister_compile_small(sister-rawtobr)
+sister_strip(sister-rawtobr)
 
 add_executable(sister-preview src/tools/preview_halftone.cpp)
 target_link_libraries(sister-preview PRIVATE sisterhl2030_encoder)
+sister_compile_small(sister-preview)
+sister_strip(sister-preview)
 
 add_executable(rastertosisterhl2030 src/cups/rastertosisterhl2030.cpp)
 target_include_directories(rastertosisterhl2030 PRIVATE src)
@@ -59,12 +84,15 @@ target_link_libraries(rastertosisterhl2030 PRIVATE sisterhl2030_encoder cups cup
 target_compile_options(rastertosisterhl2030 PRIVATE
   $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
 )
+sister_compile_small(rastertosisterhl2030)
+sister_strip(rastertosisterhl2030)
 
 add_library(sisterhl2030_status src/status/pjl.cc)
 target_include_directories(sisterhl2030_status PUBLIC src)
 target_compile_options(sisterhl2030_status PRIVATE
   $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
 )
+sister_compile_small(sisterhl2030_status)
 
 if(APPLE)
   add_executable(sister-status
@@ -78,6 +106,8 @@ if(APPLE)
   target_compile_options(sister-status PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
   )
+  sister_compile_small(sister-status)
+  sister_strip(sister-status)
 endif()
 
 # PAPPL printer application (the shipping driver). PAPPL is not packaged for
@@ -93,7 +123,7 @@ if(SISTER_WITH_PAPPL)
   set(PAPPL_PC ${PAPPL_PREFIX}/lib/pkgconfig/pappl.pc)
   # Bump when cmake/patch_pappl_idle.cmake or the configure line changes so
   # the next cmake run rebuilds libpappl instead of reusing a fat/AppKit build.
-  set(PAPPL_STAMP_VALUE "idle-1")
+  set(PAPPL_STAMP_VALUE "text-3")
   set(PAPPL_STAMP ${PAPPL_PREFIX}/.sister-pappl-stamp)
 
   set(_pappl_stamp_now "")
@@ -129,7 +159,8 @@ if(SISTER_WITH_PAPPL)
     # in libcups 3. --disable-shared keeps the app a single binary.
     execute_process(
       COMMAND ${_pappl_src}/configure --prefix=${PAPPL_PREFIX}
-              --enable-libusb --disable-shared --with-dnssd=mdnsresponder
+              --enable-libusb --disable-libjpeg --disable-shared
+              --with-dnssd=mdnsresponder
       WORKING_DIRECTORY ${_pappl_src}
       RESULT_VARIABLE _pappl_conf
       OUTPUT_FILE ${CMAKE_BINARY_DIR}/pappl-configure.log
@@ -182,10 +213,12 @@ if(SISTER_WITH_PAPPL)
   target_link_libraries(sister-printer-app PRIVATE sisterhl2030_encoder
                                                      sisterhl2030_status)
   set_target_properties(sister-printer-app PROPERTIES
-    LINK_FLAGS "${PAPPL_LINK_FLAGS} -Wl,-dead_strip")
+    LINK_FLAGS "${PAPPL_LINK_FLAGS} -Wl,-dead_strip -Wl,-x")
   target_compile_options(sister-printer-app PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra>
   )
+  sister_compile_small(sister-printer-app)
+  sister_strip(sister-printer-app)
 endif()
 
 add_executable(test_encoder tests/test_encoder.cpp)

@@ -147,47 +147,78 @@ void box_downsample_2x(std::vector<uint8_t>& toner, unsigned& width,
   height = nh;
 }
 
+void pack_toner_row_2x(const uint8_t* toner_row, unsigned width,
+                       uint8_t* packed) {
+  const unsigned out_w = width * 2;
+  const unsigned bpl = (out_w + 7) / 8;
+  std::fill(packed, packed + bpl, 0);
+  for (unsigned x = 0; x < width; ++x) {
+    if (toner_row[x] >= 128) {
+      const unsigned x0 = 2 * x;
+      packed[x0 / 8] |= static_cast<uint8_t>(0x80 >> (x0 % 8));
+      packed[(x0 + 1) / 8] |= static_cast<uint8_t>(0x80 >> ((x0 + 1) % 8));
+    }
+  }
+}
+
 void atkinson(uint8_t* toner, unsigned width, unsigned height) {
   if (width == 0 || height == 0) {
     return;
   }
-  std::vector<int> buf(static_cast<size_t>(width) * height);
-  for (size_t i = 0; i < buf.size(); ++i) {
-    buf[i] = toner[i];
-  }
+  // Same kernel as a full-page int buffer, but only three rows of error:
+  // current, y+1, y+2. Atkinson never looks further ahead.
+  std::vector<int> rows(static_cast<size_t>(width) * 3, 0);
+  int* r[3] = {rows.data(), rows.data() + width, rows.data() + 2 * width};
 
-  auto add = [&](int x, int y, int delta) {
-    if (x < 0 || y < 0 || x >= static_cast<int>(width) ||
-        y >= static_cast<int>(height)) {
+  auto load = [&](int* dest, unsigned y) {
+    if (y >= height) {
+      std::fill(dest, dest + width, 0);
       return;
     }
-    buf[static_cast<size_t>(y) * width + static_cast<unsigned>(x)] += delta;
-  };
-
-  for (unsigned y = 0; y < height; ++y) {
-    // Serpentine, as before: the kernel is mirrored on right-to-left rows so
-    // the diffusion stays symmetric and does not build directional worms.
-    const int dir = (y % 2 == 0) ? 1 : -1;
-    const int x0 = (dir > 0) ? 0 : static_cast<int>(width) - 1;
-    const int x1 = (dir > 0) ? static_cast<int>(width) : -1;
-    for (int x = x0; x != x1; x += dir) {
-      int& p = buf[static_cast<size_t>(y) * width + static_cast<unsigned>(x)];
-      const int old = p;
-      const int neu = old >= 128 ? 255 : 0;
-      p = neu;
-      const int err = (old - neu) / 8;
-      const int yi = static_cast<int>(y);
-      add(x + dir, yi, err);
-      add(x + 2 * dir, yi, err);
-      add(x - dir, yi + 1, err);
-      add(x, yi + 1, err);
-      add(x + dir, yi + 1, err);
-      add(x, yi + 2, err);
+    const uint8_t* src = toner + static_cast<size_t>(y) * width;
+    for (unsigned x = 0; x < width; ++x) {
+      dest[x] = src[x];
     }
-  }
+  };
+  load(r[0], 0);
+  load(r[1], 1);
+  load(r[2], 2);
 
-  for (size_t i = 0; i < buf.size(); ++i) {
-    toner[i] = buf[i] >= 128 ? 255 : 0;
+  const int w = static_cast<int>(width);
+  for (unsigned y = 0; y < height; ++y) {
+    const int dir = (y % 2 == 0) ? 1 : -1;
+    const int x0 = (dir > 0) ? 0 : w - 1;
+    const int x1 = (dir > 0) ? w : -1;
+    for (int x = x0; x != x1; x += dir) {
+      const int old = r[0][x];
+      const int neu = old >= 128 ? 255 : 0;
+      r[0][x] = neu;
+      const int err = (old - neu) / 8;
+      auto add = [&](int xx, int* dest) {
+        if (xx >= 0 && xx < w) {
+          dest[xx] += err;
+        }
+      };
+      add(x + dir, r[0]);
+      add(x + 2 * dir, r[0]);
+      if (y + 1 < height) {
+        add(x - dir, r[1]);
+        add(x, r[1]);
+        add(x + dir, r[1]);
+      }
+      if (y + 2 < height) {
+        add(x, r[2]);
+      }
+    }
+    uint8_t* out = toner + static_cast<size_t>(y) * width;
+    for (unsigned x = 0; x < width; ++x) {
+      out[x] = r[0][x] >= 128 ? 255 : 0;
+    }
+    int* done = r[0];
+    r[0] = r[1];
+    r[1] = r[2];
+    r[2] = done;
+    load(r[2], y + 3);
   }
 }
 
