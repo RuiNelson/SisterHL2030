@@ -12,6 +12,10 @@ compile_commands.json
 *.user
 CMakeUserPresets.json
 /captures/
+# Brother's own Linux driver packages, kept locally only as a protocol
+# reference. They are Brother's copyrighted/proprietary material, so they
+# are never committed here.
+/LinuxDrivers/
 # distrib/ is the local packaging build: root-install/ (the payload tree,
 # copied fresh from build/, launchd/ and docs/ by
 # Scripts/build_distribution_packages.sh), the built .pkg files, and any

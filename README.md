@@ -167,9 +167,9 @@ wire format was recovered.
 
 GNU GPL v2 or later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-`LinuxDrivers/` keeps Brother's original Linux packages around purely as a
-protocol reference; the proprietary binaries in there are never compiled
-into this driver. This project's license matches the GPL-2 CUPS wrapper
-sources Brother already shipped, and stays compatible with
-[brlaser](https://github.com/pdewacht/brlaser), an independent open-source
-driver for related Brother models.
+Brother's original Linux packages were used locally, during development
+only, as a protocol reference; they are not included in this repository and
+none of their proprietary code is compiled into this driver. This project's
+license matches the GPL-2 CUPS wrapper sources Brother already shipped, and
+stays compatible with [brlaser](https://github.com/pdewacht/brlaser), an
+independent open-source driver for related Brother models.

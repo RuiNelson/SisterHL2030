@@ -5,11 +5,12 @@ This program is free software under the GNU General Public License
 version 2 or later. See LICENSE.
 
 -------------------------------------------------------------------------------
-LinuxDrivers/
+Brother's original Linux driver
 
-The files under LinuxDrivers/ are original Brother Industries artifacts
-kept as a protocol reference (LPR filter, CUPS wrapper sources, and
-i386 ELF binaries). They are not linked into SisterHL2030.
+Brother Industries' own Linux driver package (LPR filter, CUPS wrapper
+sources, and i386 ELF binaries) was kept locally as a protocol reference
+during development. It is Brother's own material, is not included in this
+repository, and is not linked into SisterHL2030.
 
   - cupswrapper / filter / psconvert2 / brcupsconfig sources: GNU GPL v2
     or later, Copyright (C) 2003–2006 Brother Industries, Ltd.

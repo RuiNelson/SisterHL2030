@@ -12,9 +12,11 @@ source file carries the SPDX header and `namespace sisterhl2030`.
 `docs/protocol.md` is the normative spec for the wire format (job envelope, PJL
 page header, band/line packing). Treat it as the source of truth: change the
 encoder and the doc together, and never guess at byte layouts — the format was
-recovered from the Linux i386 blobs and confirmed against the official macOS
-`rastertobrother2030` on real hardware. The proprietary blobs in
-`LinuxDrivers/` are reference material only and are never linked.
+recovered from Brother's own Linux i386 driver blobs and confirmed against the
+official macOS `rastertobrother2030` on real hardware. Those blobs are
+Brother's proprietary material: they are kept on the maintainer's machine
+only, gitignored, and never linked into this driver or committed to this
+repository.
 
 ## Build and test
 

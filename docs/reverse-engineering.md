@@ -1,7 +1,9 @@
 # Reverse engineering notes
 
-Scope: Linux LPR 2.0.1 i386 binaries shipped in `LinuxDrivers/`, used as
-a protocol reference. SisterHL2030 does not link them.
+Scope: Brother's Linux LPR 2.0.1 i386 binaries, used locally as a protocol
+reference during development. SisterHL2030 does not link them, and they are
+not part of this repository: they are Brother's proprietary material, kept
+gitignored on the maintainer's machine only.
 
 The reimplementation lives under GPL-2+ (see `LICENSE` / `NOTICE`).
 
