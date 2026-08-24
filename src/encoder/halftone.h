@@ -19,16 +19,23 @@ void atkinson(uint8_t* toner, unsigned width, unsigned height);
 // `toner` is width*height samples, 0 = paper white, 255 = solid black.
 // On return each sample is 0 or 255. `cell` is the screen's dot radius in
 // device pixels: the growing round dot is built from a 2*cell*cell-pixel
-// rotated cell, so the centre-to-centre spacing is cell*sqrt(2) pixels
-// (screen ruling ~= dpi / (cell*sqrt(2)) lpi). Larger cell = coarser screen.
-// The default, cell=5, is tuned for this driver's 600 dpi normal/high-quality
-// output: ~85 lpi, the classic laser "fine screen" ruling, giving 50 gray
-// levels -- enough steps to keep gradients smooth while the dot stays coarse
-// enough that this engine's toner and fuser reproduce it cleanly. Draft
-// quality halftones its already-downsampled 300 dpi buffer through the same
-// default, landing near 42 lpi; that coarser dot is expected at draft.
+// rotated cell, so gray levels = 2*cell*cell and the centre-to-centre
+// spacing is cell*sqrt(2) pixels (screen ruling ~= dpi / (cell*sqrt(2)) lpi).
+// Smaller cell trades fewer gray levels for a finer, sharper screen -- at a
+// fixed output dpi those two move in lockstep, there is no free lunch.
+//
+// The default, cell=4, favours graphic precision over smooth tone: ~106 lpi
+// at this driver's 600 dpi normal/high-quality output, 32 gray levels. That
+// is a deliberate trade for a document/line-art printer, not a photo one --
+// a coarser, higher-level screen (try cell=5: ~85 lpi, 50 levels) reads
+// smoother on continuous-tone photos but blurs fine lines and small text
+// into its coarser grid; a finer one (cell=3: ~141 lpi, 18 levels) trades
+// further the other way. Draft quality halftones its already-downsampled
+// 300 dpi buffer through the same default, landing near 53 lpi at the same
+// 32 levels -- coarser dots are expected at draft, gray-level count is not
+// resolution-dependent.
 void clustered_dot_45(uint8_t* toner, unsigned width, unsigned height,
-                      unsigned cell = 5);
+                      unsigned cell = 4);
 
 // Pack one 0/255 toner row to 1-bit MSB-first (1 = black).
 void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed);

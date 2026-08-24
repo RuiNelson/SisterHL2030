@@ -22,8 +22,8 @@ void usage() {
   std::cerr
       << "usage: sister-preview [--chart] [--cell N] [-o out.bmp] [image]\n"
       << "  --chart     built-in gray ramp, midtones, and colour patches\n"
-      << "  --cell N    AM screen dot radius in pixels (default 5, ~85 lpi\n"
-      << "              at 600 dpi)\n"
+      << "  --cell N    AM screen dot radius in pixels (default 4, ~106 lpi\n"
+      << "              / 32 levels at 600 dpi)\n"
       << "  image       JPEG/PNG/TIFF/BMP (converted with sips on macOS)\n"
       << "Without arguments, writes a chart next to the binary.\n";
 }
@@ -256,7 +256,7 @@ int main(int argc, char** argv) {
   bool chart = false;
   const char* input = nullptr;
   std::string output;
-  unsigned cell = 5;
+  unsigned cell = 4;
 
   for (int i = 1; i < argc; ++i) {
     const char* a = argv[i];

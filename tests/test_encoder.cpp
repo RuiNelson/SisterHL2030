@@ -195,13 +195,13 @@ int main() {
       // Same coverage fed through two different cell sizes should still
       // land near the same overall tone -- the screen ruling changes the
       // dot pitch, not the reproduced grey level.
-      std::vector<uint8_t> mid_fine(w * h, 128);
-      clustered_dot_45(mid_fine.data(), w, h, 3);
-      int fine_black = 0;
-      for (uint8_t v : mid_fine) {
-        if (v >= 128) ++fine_black;
+      std::vector<uint8_t> mid_coarse(w * h, 128);
+      clustered_dot_45(mid_coarse.data(), w, h, 6);
+      int coarse_black = 0;
+      for (uint8_t v : mid_coarse) {
+        if (v >= 128) ++coarse_black;
       }
-      expect(std::abs(fine_black - black_px) < total / 10,
+      expect(std::abs(coarse_black - black_px) < total / 10,
              "cell size changes dot pitch, not the reproduced grey level");
     }
     {
