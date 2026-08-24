@@ -36,6 +36,21 @@ Run one by name with `ctest --test-dir build -R status --output-on-failure`.
 `sister-status` and its `-framework IOKit` link are guarded by `if(APPLE)`; the
 encoder library, `sister-rawtobr`, and both tests build anywhere.
 
+`sister-printer-app` and `rastertosisterhl2030` print with whichever halftone
+screen `-DSISTER_HALFTONE_SCREEN=` selects at configure time: `ATKINSON`
+(default, unchanged shipping behaviour) or `AM45`, the clustered-dot 45°
+ordered dither in `src/encoder/halftone.cc`. `sister-preview` is unaffected by
+this switch — it always renders both screens side by side regardless of how
+it was built, for comparing them without reprinting.
+
+Switching `SISTER_HALFTONE_SCREEN` on an *existing* `build/` and rebuilding
+right away can silently keep the old screen: reconfigure rewrites
+`flags.make`, and if that lands in the same filesystem-mtime tick as the
+stale `sister_app.cpp.o`, make sees nothing to rebuild. `cmake --build`
+needs `--clean-first` on `sister-printer-app`/`rastertosisterhl2030` whenever
+the screen selection might have changed — `Install Sister HL2030.sh` already
+does this; a fresh `build -B` directory doesn't need it.
+
 The driver version is `project(sisterhl2030 VERSION …)` in `CMakeLists.txt`
 plus the git sha (`0.9.1+abc1234def56`). Bump the CMake version when shipping
 a user-visible driver change. `sister-printer-app --version` prints the full
@@ -135,6 +150,13 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
   only; we dither.
 - PJL `RESOLUTION` must match the bitmap dpi. A 300 dpi raster with
   `RESOLUTION = 600` prints at half size — that is the 100%-scale bug.
+- The 1.28×/1.18× `scale_coverage` gain in `sister_app.cpp`'s `rendpage` (600
+  dpi / HQ1200) compensates for Atkinson's isolated single-pixel dots getting
+  lost by this engine at higher dpi. AM45 deliberately gets no such gain
+  (`SISTERHL2030_HALFTONE_AM45` branch, gain fixed at 1.0) — its dots are
+  multi-pixel blobs by construction, so they are not expected to fail the
+  same way, but that is unverified on hardware. Don't "fix" AM45 by copying
+  Atkinson's numbers over; it needs its own measurement first.
 
 ## Source layout
 
@@ -142,8 +164,9 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
   PJL/PCL envelope and drives banding (flush every 128 lines or when a band
   would exceed 16 384 payload bytes); `line.cc` packs a scanline (white / absolute
   / delta-vs-previous with substitute and repeat edits); `block.h` is the band
-  buffer; `halftone.cc` is serpentine Atkinson dithering plus the colorspace →
-  toner curves and the 600→300 box downsample.
+  buffer; `halftone.cc` is serpentine Atkinson dithering, the AM45 45°
+  clustered-dot ordered dither, the colorspace → toner curves, and the
+  600→300 box downsample.
 - `src/cups/rastertosisterhl2030.cpp` — the only CUPS-linked code. Reads
   `cups_page_header2_t`, maps colorspaces, resolves quality → `PageParams`.
 - `src/status/` — PJL parsing (`pjl.cc`, pure, unit-tested) split from IOKit USB

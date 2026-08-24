@@ -25,6 +25,12 @@ volatile sig_atomic_t interrupted = 0;
 
 void on_sigterm(int) { interrupted = 1; }
 
+#if defined(SISTERHL2030_HALFTONE_AM45)
+constexpr const char* kHalftoneScreenName = "AM45";
+#else
+constexpr const char* kHalftoneScreenName = "Atkinson";
+#endif
+
 std::string upper(std::string s) {
   for (char& c : s) {
     c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -307,7 +313,7 @@ int main(int argc, char* argv[]) {
                  "mode=%s ECONOMODE=%s\n",
                  header.cupsWidth, header.cupsHeight, header.cupsBitsPerPixel,
                  header.cupsNumColors, header.cupsColorSpace,
-                 already_1bit ? "passthrough" : "Atkinson",
+                 already_1bit ? "passthrough" : kHalftoneScreenName,
                  mode_name(params.resolution),
                  params.economode ? "ON" : "OFF");
 
@@ -372,7 +378,11 @@ int main(int argc, char* argv[]) {
               (static_cast<double>(header.cupsWidth) * header.cupsHeight);
           std::fprintf(stderr, "INFO: mean toner before dither %.1f / 255\n",
                        mean);
+#if defined(SISTERHL2030_HALFTONE_AM45)
+          sisterhl2030::clustered_dot_45(toner.data(), out_w, out_h);
+#else
           sisterhl2030::atkinson(toner.data(), out_w, out_h);
+#endif
         } else {
           // 1-bit draft: 2×2 box already produced 0..255; re-threshold.
           for (uint8_t& t : toner) {

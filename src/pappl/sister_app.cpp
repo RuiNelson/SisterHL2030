@@ -46,6 +46,11 @@ constexpr const char* kDnsSdName = "Brother HL-2030";
 // empty one the macOS Supply Levels panel stays empty until the first real
 // print. Submitting this costs no paper.
 constexpr const char* kStatusJobName = ".sister-status";
+#if defined(SISTERHL2030_HALFTONE_AM45)
+constexpr const char* kHalftoneScreenName = "AM45";
+#else
+constexpr const char* kHalftoneScreenName = "Atkinson";
+#endif
 
 // Per-job state. PAPPL hands it back to every raster callback.
 struct JobState {
@@ -332,6 +337,17 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
     sisterhl2030::box_downsample_2x(state->toner, width, height);
   }
 
+#if defined(SISTERHL2030_HALFTONE_AM45)
+  // The 1.28/1.18 dot-gain compensation below (see the #else) was measured
+  // against Atkinson's failure mode on this engine: isolated single-pixel
+  // dots that go missing more often at higher dpi. A clustered-dot screen
+  // groups every dot into a solid multi-pixel blob for exactly this reason,
+  // so it should not lose coverage the same way -- but that is a hypothesis,
+  // not a measurement, and reusing Atkinson's numbers here would stack an
+  // unverified resolution-dependent correction on top of an unverified
+  // algorithm. No compensation until AM45 has its own hardware measurement.
+  const float gain = 1.0f;
+#else
   // Draft at 300 dpi is the reference look. 600 and 1200 have less dot
   // gain, so they need more digital coverage to match. Fine at 1.28 was
   // a hair too heavy once the page was full size (ECONOMODE is already
@@ -342,6 +358,7 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   } else if (state->params.resolution == 1200) {
     gain = 1.18f;
   }
+#endif
   sisterhl2030::scale_coverage(state->toner.data(), state->toner.size(), gain);
 
   // How much tone did we actually receive? If PAPPL already reduced the page
@@ -353,20 +370,26 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   // papplLogJob implements its own printf subset -- %zu is not in it and
   // crashes the server, so keep every conversion to %d/%u/%s.
   papplLogJob(job, PAPPL_LOGLEVEL_INFO,
-              "Page %ux%u: %u of %u samples are mid-tone (%s).", width, height,
-              static_cast<unsigned>(midtones),
+              "Page %ux%u: %u of %u samples are mid-tone (%s via %s).", width,
+              height, static_cast<unsigned>(midtones),
               static_cast<unsigned>(state->toner.size()),
-              midtones ? "dithering" : "already 1-bit");
+              midtones ? "dithering" : "already 1-bit", kHalftoneScreenName);
   papplLogJob(job, PAPPL_LOGLEVEL_INFO,
               "Received %u of %u raster lines.", state->lines_seen,
               height);
 
+#if defined(SISTERHL2030_HALFTONE_AM45)
+  sisterhl2030::clustered_dot_45(state->toner.data(), width, height);
+#else
   sisterhl2030::atkinson(state->toner.data(), width, height);
+#endif
 
-  // HQ1200's pixel grid is twice 600 dpi. Dither at 600 first: Atkinson on
-  // a 1200 dpi A4 page is ~140 million pixels and a 500 MB error buffer,
-  // which never finishes. Pixel-double the 1-bit rows as they encode so
-  // RAS1200MODE still prints at full size without a 4x 8-bit page.
+  // HQ1200's pixel grid is twice 600 dpi. Dither at 600 first: a 1200 dpi A4
+  // toner buffer is ~140 million 8-bit samples, and Atkinson's serpentine
+  // error diffusion never finishes at that size. Pixel-double the 1-bit rows
+  // as they encode so RAS1200MODE still prints at full size without a 4x
+  // 8-bit page -- this also keeps the screen ruling identical to Normal
+  // quality's dither, just rendered with finer engine dots underneath it.
   const bool x2 = state->params.resolution == 1200 && state->raster_dpi < 900;
   if (x2) {
     papplLogJob(job, PAPPL_LOGLEVEL_INFO,

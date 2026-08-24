@@ -20,8 +20,10 @@ namespace {
 
 void usage() {
   std::cerr
-      << "usage: sister-preview [--chart] [-o out.bmp] [image]\n"
+      << "usage: sister-preview [--chart] [--cell N] [-o out.bmp] [image]\n"
       << "  --chart     built-in gray ramp, midtones, and colour patches\n"
+      << "  --cell N    AM screen dot radius in pixels (default 5, ~85 lpi\n"
+      << "              at 600 dpi)\n"
       << "  image       JPEG/PNG/TIFF/BMP (converted with sips on macOS)\n"
       << "Without arguments, writes a chart next to the binary.\n";
 }
@@ -187,8 +189,10 @@ void make_chart(int w, int h, std::vector<uint8_t>* rgb) {
   }
 }
 
-void halftone_rgb(const std::vector<uint8_t>& rgb, int w, int h,
-                  std::vector<uint8_t>* paper_bgr) {
+enum class Screen { kAtkinson, kClusteredDot45 };
+
+void halftone_rgb(const std::vector<uint8_t>& rgb, int w, int h, Screen screen,
+                  unsigned cell, std::vector<uint8_t>* paper_bgr) {
   paper_bgr->assign(static_cast<size_t>(w) * h * 3, 255);
   std::vector<uint8_t> toner(static_cast<size_t>(w) * static_cast<size_t>(h));
   for (int y = 0; y < h; ++y) {
@@ -200,8 +204,13 @@ void halftone_rgb(const std::vector<uint8_t>& rgb, int w, int h,
       toner[static_cast<size_t>(y) * w + x] = sisterhl2030::rgb_to_toner(r, g, b);
     }
   }
-  sisterhl2030::atkinson(toner.data(), static_cast<unsigned>(w),
-                                static_cast<unsigned>(h));
+  if (screen == Screen::kAtkinson) {
+    sisterhl2030::atkinson(toner.data(), static_cast<unsigned>(w),
+                          static_cast<unsigned>(h));
+  } else {
+    sisterhl2030::clustered_dot_45(toner.data(), static_cast<unsigned>(w),
+                                  static_cast<unsigned>(h), cell);
+  }
   for (int y = 0; y < h; ++y) {
     uint8_t* dst = paper_bgr->data() + static_cast<size_t>(y) * w * 3;
     const uint8_t* trow = toner.data() + static_cast<size_t>(y) * w;
@@ -214,19 +223,20 @@ void halftone_rgb(const std::vector<uint8_t>& rgb, int w, int h,
   }
 }
 
-void side_by_side(const std::vector<uint8_t>& rgb, const std::vector<uint8_t>& ht,
-                  int w, int h, std::vector<uint8_t>* out, int* ow, int* oh) {
+void panels_side_by_side(const std::vector<const std::vector<uint8_t>*>& panels,
+                         int w, int h, std::vector<uint8_t>* out, int* ow,
+                         int* oh) {
   const int gap = 16;
-  *ow = w * 2 + gap;
+  const int n = static_cast<int>(panels.size());
+  *ow = w * n + gap * (n - 1);
   *oh = h;
   out->assign(static_cast<size_t>(*ow) * *oh * 3, 230);
   for (int y = 0; y < h; ++y) {
-    std::memcpy(out->data() + static_cast<size_t>(y) * *ow * 3,
-                rgb.data() + static_cast<size_t>(y) * w * 3,
-                static_cast<size_t>(w) * 3);
-    std::memcpy(out->data() + (static_cast<size_t>(y) * *ow + w + gap) * 3,
-                ht.data() + static_cast<size_t>(y) * w * 3,
-                static_cast<size_t>(w) * 3);
+    for (int i = 0; i < n; ++i) {
+      std::memcpy(out->data() + (static_cast<size_t>(y) * *ow + i * (w + gap)) * 3,
+                  panels[i]->data() + static_cast<size_t>(y) * w * 3,
+                  static_cast<size_t>(w) * 3);
+    }
   }
 }
 
@@ -246,6 +256,7 @@ int main(int argc, char** argv) {
   bool chart = false;
   const char* input = nullptr;
   std::string output;
+  unsigned cell = 5;
 
   for (int i = 1; i < argc; ++i) {
     const char* a = argv[i];
@@ -255,6 +266,12 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(a, "--chart") == 0) {
       chart = true;
+    } else if (std::strcmp(a, "--cell") == 0) {
+      if (i + 1 >= argc) {
+        usage();
+        return 2;
+      }
+      cell = static_cast<unsigned>(std::atoi(argv[++i]));
     } else if (std::strcmp(a, "-o") == 0) {
       if (i + 1 >= argc) {
         usage();
@@ -307,23 +324,26 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::vector<uint8_t> ht;
-  halftone_rgb(rgb, w, h, &ht);
+  std::vector<uint8_t> atk;
+  halftone_rgb(rgb, w, h, Screen::kAtkinson, cell, &atk);
+  std::vector<uint8_t> am;
+  halftone_rgb(rgb, w, h, Screen::kClusteredDot45, cell, &am);
 
   int ow = 0;
   int oh = 0;
-  std::vector<uint8_t> both;
-  side_by_side(rgb, ht, w, h, &both, &ow, &oh);
-  if (!write_bmp_bgr(output.c_str(), ow, oh, both)) {
+  std::vector<uint8_t> all;
+  panels_side_by_side({&rgb, &atk, &am}, w, h, &all, &ow, &oh);
+  if (!write_bmp_bgr(output.c_str(), ow, oh, all)) {
     std::perror(output.c_str());
     return 1;
   }
   std::cerr << "Wrote " << output << " (" << ow << "x" << oh
-            << "). Left = original, right = Atkinson (as on paper).\n";
+            << "). Left = original, middle = Atkinson, right = AM 45° "
+            << "clustered-dot (cell " << cell << "), as on paper.\n";
   if (chart) {
     std::cerr << "Chart: ramp, 25/50/75% gray, colour patches, soft disc.\n"
-              << "If the RIGHT side is a readable gray photo, the algorithm is\n"
-              << "fine and a too-dark print is polarity in the CUPS raster.\n";
+              << "If the panels read as gray photos, the algorithms are fine\n"
+              << "and a too-dark print is polarity in the CUPS raster.\n";
   }
   return 0;
 }

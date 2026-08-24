@@ -166,6 +166,91 @@ int main() {
       sisterhl2030::pack_toner_row_2x(row, 4, packed);
       expect(packed[0] == 0xCC, "2x pack doubles bits (11001100)");
     }
+    {
+      using sisterhl2030::clustered_dot_45;
+      const unsigned w = 240;
+      const unsigned h = 240;
+      std::vector<uint8_t> white(w * h, 0);
+      clustered_dot_45(white.data(), w, h);
+      expect(std::all_of(white.begin(), white.end(),
+                         [](uint8_t v) { return v == 0; }),
+             "white input stays white through the 45° screen");
+
+      std::vector<uint8_t> black(w * h, 255);
+      clustered_dot_45(black.data(), w, h);
+      expect(std::all_of(black.begin(), black.end(),
+                         [](uint8_t v) { return v == 255; }),
+             "solid black input stays solid through the 45° screen");
+
+      std::vector<uint8_t> mid(w * h, 128);
+      clustered_dot_45(mid.data(), w, h);
+      int black_px = 0;
+      for (uint8_t v : mid) {
+        if (v >= 128) ++black_px;
+      }
+      const int total = static_cast<int>(w * h);
+      expect(black_px > total / 5 && black_px < (total * 4) / 5,
+             "mid-grey 45° screen is a mixed dot pattern, not a solid slab");
+
+      // Same coverage fed through two different cell sizes should still
+      // land near the same overall tone -- the screen ruling changes the
+      // dot pitch, not the reproduced grey level.
+      std::vector<uint8_t> mid_fine(w * h, 128);
+      clustered_dot_45(mid_fine.data(), w, h, 3);
+      int fine_black = 0;
+      for (uint8_t v : mid_fine) {
+        if (v >= 128) ++fine_black;
+      }
+      expect(std::abs(fine_black - black_px) < total / 10,
+             "cell size changes dot pitch, not the reproduced grey level");
+    }
+    {
+      using sisterhl2030::clustered_dot_45;
+      using sisterhl2030::rgb_to_toner;
+      const unsigned w = 256;
+      const unsigned h = 64;
+      std::vector<uint8_t> ramp(w);
+      for (unsigned x = 0; x < w; ++x) {
+        ramp[x] = rgb_to_toner(static_cast<uint8_t>(x), static_cast<uint8_t>(x),
+                               static_cast<uint8_t>(x));
+      }
+      std::vector<uint8_t> ramp_page(static_cast<size_t>(w) * h);
+      for (unsigned y = 0; y < h; ++y) {
+        std::memcpy(ramp_page.data() + static_cast<size_t>(y) * w, ramp.data(), w);
+      }
+      clustered_dot_45(ramp_page.data(), w, h);
+      int dark = 0, light = 0;
+      for (unsigned y = 0; y < h; ++y) {
+        for (unsigned x = 0; x < 32; ++x) {
+          if (ramp_page[y * w + x] >= 128) ++dark;
+          if (ramp_page[y * w + (w - 32 + x)] >= 128) ++light;
+        }
+      }
+      expect(dark > light * 2,
+             "45° screen ramp keeps contrast (dark end much blacker)");
+    }
+    {
+      // Tiling correctness: the screen must repeat with period 2*cell in
+      // both x and y, since that is the whole point of the (x+y, x-y)
+      // lattice trick -- a bug there shows up as visible seams on paper.
+      using sisterhl2030::clustered_dot_45;
+      const unsigned cell = 6;
+      const unsigned period = 2 * cell;
+      const unsigned w = period * 5;
+      const unsigned h = period * 5;
+      std::vector<uint8_t> a(static_cast<size_t>(w) * h, 96);
+      clustered_dot_45(a.data(), w, h, cell);
+      bool periodic = true;
+      for (unsigned y = 0; y < h - period && periodic; ++y) {
+        for (unsigned x = 0; x < w - period; ++x) {
+          if (a[y * w + x] != a[(y + period) * w + (x + period)]) {
+            periodic = false;
+            break;
+          }
+        }
+      }
+      expect(periodic, "45° screen tiles losslessly with period 2*cell");
+    }
   }
 
   // White line compresses to a single 0xFF.

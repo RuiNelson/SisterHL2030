@@ -68,6 +68,20 @@ target_compile_options(sisterhl2030_encoder PRIVATE
 )
 sister_compile_small(sisterhl2030_encoder)
 
+# Which screen sister-printer-app and rastertosisterhl2030 actually print
+# with. AM45 is still unverified on hardware (see halftone.h); ATKINSON stays
+# the default so a plain configure never changes shipping output.
+set(SISTER_HALFTONE_SCREEN "ATKINSON" CACHE STRING
+    "Production halftone screen: ATKINSON or AM45")
+set_property(CACHE SISTER_HALFTONE_SCREEN PROPERTY STRINGS ATKINSON AM45)
+if(NOT SISTER_HALFTONE_SCREEN MATCHES "^(ATKINSON|AM45)$")
+  message(FATAL_ERROR
+    "SISTER_HALFTONE_SCREEN must be ATKINSON or AM45, got '${SISTER_HALFTONE_SCREEN}'")
+endif()
+if(SISTER_HALFTONE_SCREEN STREQUAL "AM45")
+  target_compile_definitions(sisterhl2030_encoder PUBLIC SISTERHL2030_HALFTONE_AM45=1)
+endif()
+
 add_executable(sister-rawtobr src/tools/rawtobr.cpp)
 target_link_libraries(sister-rawtobr PRIVATE sisterhl2030_encoder)
 sister_compile_small(sister-rawtobr)

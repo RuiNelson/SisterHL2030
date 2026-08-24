@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <vector>
 
 namespace sisterhl2030 {
@@ -219,6 +220,107 @@ void atkinson(uint8_t* toner, unsigned width, unsigned height) {
     r[1] = r[2];
     r[2] = done;
     load(r[2], y + 3);
+  }
+}
+
+namespace {
+
+// A 45° clustered-dot screen tiles the raster exactly if the cell is the
+// square spanned by the two device-pixel vectors (cell,cell) and
+// (cell,-cell) -- both length cell*sqrt(2), perpendicular, so the tile is a
+// square rotated 45° with no gaps or overlap. Substituting s = x+y, d = x-y
+// turns that rotated square into an axis-aligned box: the vector (cell,cell)
+// is s += 2*cell, and (cell,-cell) is d += 2*cell, so a pixel's position
+// inside its cell is just (s mod 2*cell, d mod 2*cell). x+y and x-y always
+// share parity, so only half of that (2*cell)^2 box is ever hit -- exactly
+// the 2*cell*cell pixels the rotated cell actually contains.
+//
+// Ranking those pixels by distance from the cell centre and normalizing the
+// rank into a 0..255 threshold gives an ordered-dither matrix: thresholding
+// coverage against it grows a round dot outward from the centre as coverage
+// rises, which is what "AM halftoning" means, while the rank-based (rather
+// than raw-distance) threshold keeps exactly the right pixel count black at
+// every coverage level.
+class ClusteredDotScreen {
+ public:
+  explicit ClusteredDotScreen(unsigned k)
+      : period_(2 * k), lut_(static_cast<size_t>(period_) * period_, 0) {
+    struct Entry {
+      unsigned s;
+      unsigned d;
+      long distsq;
+    };
+    std::vector<Entry> entries;
+    entries.reserve(static_cast<size_t>(period_) * k);
+    const int c = static_cast<int>(k);
+    for (unsigned s = 0; s < period_; ++s) {
+      for (unsigned d = 0; d < period_; ++d) {
+        if ((s ^ d) & 1u) {
+          continue;  // x=(s+d)/2 needs s,d same parity.
+        }
+        const int ds = static_cast<int>(s) - c;
+        const int dd = static_cast<int>(d) - c;
+        entries.push_back(
+            {s, d, static_cast<long>(ds) * ds + static_cast<long>(dd) * dd});
+      }
+    }
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+      if (a.distsq != b.distsq) {
+        return a.distsq < b.distsq;
+      }
+      if (a.s != b.s) {
+        return a.s < b.s;
+      }
+      return a.d < b.d;
+    });
+    const size_t n = entries.size();
+    for (size_t i = 0; i < n; ++i) {
+      const Entry& e = entries[i];
+      lut_[static_cast<size_t>(e.s) * period_ + e.d] =
+          static_cast<uint8_t>((i * 256) / n);
+    }
+  }
+
+  uint8_t threshold(int x, int y) const {
+    const int p = static_cast<int>(period_);
+    int s = (x + y) % p;
+    if (s < 0) {
+      s += p;
+    }
+    int d = (x - y) % p;
+    if (d < 0) {
+      d += p;
+    }
+    return lut_[static_cast<size_t>(s) * period_ + d];
+  }
+
+ private:
+  unsigned period_;
+  std::vector<uint8_t> lut_;
+};
+
+}  // namespace
+
+void clustered_dot_45(uint8_t* toner, unsigned width, unsigned height,
+                      unsigned cell) {
+  if (width == 0 || height == 0) {
+    return;
+  }
+  if (cell == 0) {
+    cell = 1;
+  }
+  static thread_local std::unique_ptr<ClusteredDotScreen> screen;
+  static thread_local unsigned screen_cell = 0;
+  if (!screen || screen_cell != cell) {
+    screen = std::make_unique<ClusteredDotScreen>(cell);
+    screen_cell = cell;
+  }
+  for (unsigned y = 0; y < height; ++y) {
+    uint8_t* row = toner + static_cast<size_t>(y) * width;
+    for (unsigned x = 0; x < width; ++x) {
+      const uint8_t th = screen->threshold(static_cast<int>(x), static_cast<int>(y));
+      row[x] = (row[x] > th) ? 255 : 0;
+    }
   }
 }
 

@@ -15,6 +15,21 @@ namespace sisterhl2030 {
 // On return each sample is 0 or 255.
 void atkinson(uint8_t* toner, unsigned width, unsigned height);
 
+// Clustered-dot ordered dither (AM halftoning), screen angle 45°.
+// `toner` is width*height samples, 0 = paper white, 255 = solid black.
+// On return each sample is 0 or 255. `cell` is the screen's dot radius in
+// device pixels: the growing round dot is built from a 2*cell*cell-pixel
+// rotated cell, so the centre-to-centre spacing is cell*sqrt(2) pixels
+// (screen ruling ~= dpi / (cell*sqrt(2)) lpi). Larger cell = coarser screen.
+// The default, cell=5, is tuned for this driver's 600 dpi normal/high-quality
+// output: ~85 lpi, the classic laser "fine screen" ruling, giving 50 gray
+// levels -- enough steps to keep gradients smooth while the dot stays coarse
+// enough that this engine's toner and fuser reproduce it cleanly. Draft
+// quality halftones its already-downsampled 300 dpi buffer through the same
+// default, landing near 42 lpi; that coarser dot is expected at draft.
+void clustered_dot_45(uint8_t* toner, unsigned width, unsigned height,
+                      unsigned cell = 5);
+
 // Pack one 0/255 toner row to 1-bit MSB-first (1 = black).
 void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed);
 

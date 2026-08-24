@@ -91,12 +91,43 @@ fi
 echo "CMake and compiler found."
 echo
 
+echo "${c_bold}    Choosing a halftone screen…${c_reset}"
+echo
+echo "SisterHL2030 can dither photos and shading two ways:"
+echo "  ${c_bold}FM${c_reset}  Atkinson error diffusion (scattered dots). The proven"
+echo "        default this driver has shipped with."
+echo "  ${c_bold}AM${c_reset}  45° clustered-dot ordered dither. Experimental: it has no"
+echo "        dot-gain compensation yet, so it currently prints lighter than"
+echo "        FM, and it has not been verified on paper."
+echo
+halftone_cmake=""
+halftone_label=""
+while [[ -z "$halftone_cmake" ]]; do
+  read -r -p "Install which one? [FM/am] (default FM): " halftone_answer || true
+  halftone_answer="$(printf '%s' "$halftone_answer" | tr '[:lower:]' '[:upper:]')"
+  case "$halftone_answer" in
+    ""|FM) halftone_cmake="ATKINSON"; halftone_label="FM (Atkinson)" ;;
+    AM)    halftone_cmake="AM45";     halftone_label="AM (45° clustered-dot, experimental)" ;;
+    *)     echo "Please type FM or AM." ;;
+  esac
+done
+echo "${c_green}Using the ${halftone_label} screen.${c_reset}"
+echo
+
 echo "${c_bold}3/4  Compiling the printer application for this Mac…${c_reset}"
 echo "${c_dim}(the first build also downloads and builds PAPPL, a few minutes)${c_reset}"
 echo
 cd "$ROOT"
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON
-cmake --build build --target sister-printer-app sister-status -j
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON \
+  -DSISTER_HALFTONE_SCREEN="$halftone_cmake"
+# --clean-first: switching SISTER_HALFTONE_SCREEN on an existing build/ only
+# changes a compile *definition*, and re-running configure immediately
+# before build can regenerate flags.make in the same filesystem-mtime tick
+# as the stale object file, so make sees nothing to rebuild and silently
+# keeps the previous screen. Forcing a clean of just these two targets costs
+# a few seconds (their dependencies are already built) and makes sure the
+# choice above always takes effect.
+cmake --build build --target sister-printer-app sister-status --clean-first -j
 echo
 if ! file "$ROOT/build/sister-printer-app" | grep -q 'arm64\|x86_64\|executable'; then
   die "The build did not produce the printer application. See the messages above."
@@ -195,6 +226,7 @@ echo "Printer application: $SISTER_APP"
 if [[ -x "$SISTER_APP" ]]; then
   echo "        $(file -b "$SISTER_APP")"
   echo "        version $("$SISTER_APP" --version 2>/dev/null || echo unknown)"
+  echo "        halftone screen: ${halftone_label}"
 fi
 echo "To confirm this copy is the one running:  Scripts/Check Sister HL2030.sh"
 echo
