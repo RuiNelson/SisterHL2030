@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="1">
-    <title>Sister HL-2030</title>
+    <title>@TITLE@</title>
     <welcome file="welcome.html" mime-type="text/html"/>
     <options customize="never" require-scripts="false" rootVolumeOnly="true"/>
     <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>

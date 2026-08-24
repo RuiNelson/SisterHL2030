@@ -36,17 +36,42 @@ connection, and it does not support Intel Macs. Plug the printer directly
 into the Apple Silicon Mac that will host it, then turn on sharing (see
 below) so that Mac shares it with everything else.
 
+## Two print styles
+
+SisterHL2030 ships as two installers that differ in exactly one thing: how
+photos and shaded areas are turned into the dots this laser actually prints.
+Everything else — quality modes, AirPrint sharing, supply levels — is
+identical either way, and you can install the other one later if you change
+your mind; it just replaces the one already there.
+
+* **Newspaper style** — `InstallSisterDrivers(NewspaperStyle).pkg`. Dots are
+  grouped into a crisp, evenly-spaced grid, the way a halftone photo looks
+  in a printed newspaper. Sharper on line art, logos and small text; the dot
+  pattern is more visible on smooth photos.
+* **Pencil style** — `InstallSisterDrivers(PencilStyle).pkg`. Dots are
+  scattered individually (a technique called Atkinson dithering, the one
+  classic Mac graphics software used), giving a soft, sketchy texture like
+  pencil shading. Smoother gradients on photos; softer edges on line art and
+  text.
+
+Not sure which? Pencil style is the one this driver has always shipped
+with — reach for Newspaper style if what you print is mostly documents,
+line art or text rather than photos.
+
 ## Installing
 
 1. Go to the [Releases page](https://github.com/RuiNelson/SisterHL2030/releases)
-   and download the latest set of installer packages.
+   and download the latest set of installer packages, including whichever
+   one of `InstallSisterDrivers(NewspaperStyle).pkg` or
+   `InstallSisterDrivers(PencilStyle).pkg` matches the style you want (see
+   above).
 2. If you still have Brother's official driver installed, double-click
    **`UninstallBrotherDrivers.pkg`** first and follow the prompts. The two
    drivers can't be installed side by side.
 3. Plug the printer into your Mac with a USB cable and turn it on.
-4. Double-click **`InstallSisterDrivers.pkg`** and follow the prompts. macOS
-   will ask for your administrator password, which is normal for anything
-   that installs system software.
+4. Double-click the `InstallSisterDrivers(...).pkg` you picked and follow
+   the prompts. macOS will ask for your administrator password, which is
+   normal for anything that installs system software.
 
 The printer will now show up in System Settings → Printers & Scanners on
 this Mac, and you can print to it right away from here.
@@ -68,9 +93,9 @@ Once that's on, the printer appears in the Print dialog on every
 AirPrint-capable device on the same network, for as long as this Mac is
 awake and the printer is connected and powered on.
 
-All three installers are signed with a Developer ID certificate, so macOS
-will let you open them normally (you may still see a first-run Gatekeeper
-prompt, which is expected for software from outside the App Store).
+All installers are signed with a Developer ID certificate, so macOS will let
+you open them normally (you may still see a first-run Gatekeeper prompt,
+which is expected for software from outside the App Store).
 
 ### Uninstalling
 
@@ -85,9 +110,9 @@ leaves nothing behind.
   the printer is connected to one Mac over USB and sharing is turned on.
 * **Correct scaling**: pages print at 100% by default (older setups on
   Apple Silicon are prone to printing everything at half-size).
-* **Good-looking output**: an Atkinson dithering algorithm for halftones,
-  the same technique used by classic Mac graphics software, tuned for this
-  printer's resolutions.
+* **Good-looking output**: a choice of two halftone styles for photos and
+  shading, Newspaper or Pencil (see above), each tuned for this printer's
+  resolutions.
 * **Toner and drum levels**: shown right in System Settings' Supply Levels
   panel, same as a modern printer.
 * **Three quality modes**: Draft (300 dpi), Normal (600 dpi), and Fine
@@ -139,9 +164,12 @@ development (as opposed to the `.pkg` installers used for releases):
 ```
 
 Both ask for an administrator password and refuse to run if the official
-Brother package is still present. `Scripts/Uninstall Sister HL2030.sh`
-reverses it. `Scripts/build_distribution_packages.sh` builds the three
-signed `.pkg` files that ship in each release.
+Brother package is still present; the install script also asks which
+halftone style to build (see [Two print styles](#two-print-styles) above).
+`Scripts/Uninstall Sister HL2030.sh` reverses it.
+`Scripts/build_distribution_packages.sh` builds the four signed `.pkg`
+files that ship in each release: one `InstallSisterDrivers` per style, plus
+the two uninstallers.
 
 To turn a bitmap into a HL-2030 job stream directly, without printing:
 

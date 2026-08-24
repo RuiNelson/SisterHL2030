@@ -1,10 +1,21 @@
 #!/bin/bash
-# Build the three signed .pkg installers in distrib/:
-#   InstallSisterDrivers.pkg    - the native arm64 driver, as a distribution
-#                                 package with a localized welcome pane
-#                                 (resources-install/*.lproj)
-#   UninstallSisterDrivers.pkg  - removes it
+# Build the four signed .pkg installers in distrib/:
+#   InstallSisterDrivers(NewspaperStyle).pkg - native arm64 driver, AM45
+#                                              (clustered-dot) halftone
+#   InstallSisterDrivers(PencilStyle).pkg    - native arm64 driver, Atkinson
+#                                              (error-diffusion) halftone
+#   UninstallSisterDrivers.pkg  - removes either one
 #   UninstallBrotherDrivers.pkg - removes the official Intel Brother package
+#
+# The two install packages are alternate builds of the same underlying
+# package -- same pkgbuild identifier, same install location -- so running
+# one after the other just switches which halftone screen this Mac's copy
+# uses, and a single UninstallSisterDrivers.pkg removes either one. Each
+# gets its own distribution package with a localized welcome pane
+# (resources-install/*.lproj); only en.lproj gets a style-specific callout
+# sentence (see the HALFTONE_NOTE substitution below) -- the other
+# languages keep the existing, style-agnostic instructions rather than ship
+# a machine-translated sentence in a signed installer.
 #
 # Not a novice-facing script: run it by hand from a Terminal to produce
 # the packages that get handed out. Requires a "Developer ID Installer"
@@ -59,26 +70,30 @@ notarize_and_staple() {
   xcrun stapler staple "$pkg"
 }
 
-if [[ ! -x "$ROOT/build/sister-printer-app" || ! -x "$ROOT/build/sister-status" ]]; then
-  echo "Build the driver first:" >&2
-  echo "  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON" >&2
-  echo "  cmake --build build --target sister-printer-app sister-status -j" >&2
+if ! command -v cmake >/dev/null 2>&1; then
+  echo "cmake not found. Install Xcode Command Line Tools and cmake first." >&2
   exit 1
 fi
+
+# sister-printer-app is built twice below, once per halftone screen --
+# that is the whole point of this script. sister-status never links the
+# encoder library, so the screen switch cannot affect it; build it once
+# here rather than twice inside the loop.
+echo "Building sister-status ($VERSION, shared by both halftone variants)…"
+cd "$ROOT"
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON
+cmake --build build --target sister-status -j
 
 echo "Rebuilding the install payload from build/, launchd/ and docs/…"
 PAYLOAD="$DISTRIB/root-install/Library/Printers/SisterHL2030"
 LAUNCHD_DEST="$DISTRIB/root-install/Library/LaunchDaemons"
 mkdir -p "$PAYLOAD" "$LAUNCHD_DEST"
 
-cp "$ROOT/build/sister-printer-app" "$PAYLOAD/sister-printer-app"
 cp "$ROOT/build/sister-status" "$PAYLOAD/sister-status"
 cp "$ROOT/Scripts/_privileged-create-queue.sh" "$PAYLOAD/.create-queue.sh"
-chmod 755 "$PAYLOAD/sister-printer-app" "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
+chmod 755 "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
 
-echo "Signing payload binaries for notarization…"
-codesign --force --options runtime --timestamp \
-  --sign "$APP_SIGN_ID" "$PAYLOAD/sister-printer-app"
+echo "Signing sister-status for notarization…"
 codesign --force --options runtime --timestamp \
   --sign "$APP_SIGN_ID" "$PAYLOAD/sister-status"
 
@@ -110,30 +125,86 @@ chmod 644 "$PAYLOAD/icon.png" "$PAYLOAD/.sister.icns"
 rm -rf "$icon_tmp"
 trap - EXIT
 
-echo "Building the install component ($VERSION)…"
-pkgbuild \
-  --root "$DISTRIB/root-install" \
-  --identifier com.ruinelson.sisterhl2030.pkg.install \
-  --version "$VERSION" \
-  --install-location / \
-  --scripts "$DISTRIB/scripts-install" \
-  "$DISTRIB/component-install.pkg"
+# Two builds of sister-printer-app, one per halftone screen. sister-status,
+# the icons and the LaunchDaemon plist above are identical either way and
+# already sit in $PAYLOAD. Same pkgbuild --identifier both times on purpose:
+# these are alternate builds of the same package (same files, same install
+# location), not two different products, so switching styles is an ordinary
+# reinstall over the previous one rather than two receipts fighting over
+# the same paths.
+variant_screen=(AM45 ATKINSON)
+variant_suffix=("(NewspaperStyle)" "(PencilStyle)")
+variant_title=("Sister HL-2030 — Newspaper Style (AM halftone)" "Sister HL-2030 — Pencil Style (Atkinson halftone)")
+variant_note=(
+  "This build prints shaded areas with the <b>AM (Newspaper-style)</b> halftone screen: a crisp, evenly-spaced dot pattern, the way a newspaper photo looks up close."
+  "This build prints shaded areas with the <b>Atkinson (Pencil-style)</b> halftone: a soft, scattered texture, the way pencil shading looks up close."
+)
+install_pkg_names=()
 
-# Wraps the component in a distribution package so Installer.app shows a
-# welcome pane first (connect the printer, uninstall Brother's drivers).
-# The pane text is localized via .lproj folders in resources-install/,
-# picked automatically to match the user's language, same mechanism as any
-# other pkg resource.
-echo "Building InstallSisterDrivers.pkg ($VERSION)…"
-sed "s/@VERSION@/$VERSION/" "$ROOT/distrib/distribution-install.xml.in" \
-  > "$DISTRIB/distribution-install.xml"
-productbuild \
-  --distribution "$DISTRIB/distribution-install.xml" \
-  --package-path "$DISTRIB" \
-  --resources "$ROOT/distrib/resources-install" \
-  --sign "$SIGN_ID" \
-  "$DISTRIB/InstallSisterDrivers.pkg"
-notarize_and_staple "$DISTRIB/InstallSisterDrivers.pkg"
+for i in "${!variant_screen[@]}"; do
+  screen="${variant_screen[$i]}"
+  suffix="${variant_suffix[$i]}"
+  title="${variant_title[$i]}"
+  note="${variant_note[$i]}"
+  pkg_name="InstallSisterDrivers${suffix}"
+  install_pkg_names+=("$pkg_name")
+
+  echo
+  echo "=== $pkg_name: compiling sister-printer-app with SISTER_HALFTONE_SCREEN=$screen ==="
+  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON \
+    -DSISTER_HALFTONE_SCREEN="$screen"
+  # --clean-first: reconfiguring the same build/ only changes a compile
+  # *definition*, and a fast reconfigure+build can land in the same
+  # filesystem-mtime tick, in which case make sees nothing to rebuild and
+  # silently keeps the previous screen (see CLAUDE.md's "Traps that cost
+  # real time here"). This is exactly that risk, twice per run, so it is
+  # not optional here.
+  cmake --build build --target sister-printer-app --clean-first -j
+
+  cp "$ROOT/build/sister-printer-app" "$PAYLOAD/sister-printer-app"
+  chmod 755 "$PAYLOAD/sister-printer-app"
+  codesign --force --options runtime --timestamp \
+    --sign "$APP_SIGN_ID" "$PAYLOAD/sister-printer-app"
+
+  echo "Building the install component ($VERSION)…"
+  pkgbuild \
+    --root "$DISTRIB/root-install" \
+    --identifier com.ruinelson.sisterhl2030.pkg.install \
+    --version "$VERSION" \
+    --install-location / \
+    --scripts "$DISTRIB/scripts-install" \
+    "$DISTRIB/component-install.pkg"
+
+  # Wraps the component in a distribution package so Installer.app shows a
+  # welcome pane first (connect the printer, uninstall Brother's drivers,
+  # which halftone screen this build uses). The pane text is localized via
+  # .lproj folders, picked automatically to match the user's language; only
+  # en.lproj's copy is templated per variant (see the header comment).
+  echo "Building $pkg_name.pkg ($VERSION)…"
+  RES_BUILD="$DISTRIB/resources-install-build"
+  rm -rf "$RES_BUILD"
+  cp -R "$ROOT/distrib/resources-install" "$RES_BUILD"
+  # Bash substitution, not sed: the note text has closing HTML tags like
+  # </b>, and a literal / in the replacement collides with sed's own s/../..
+  # delimiter -- it fails with "bad flag in substitute command", silently
+  # leaving @HALFTONE_NOTE@ untouched in a signed, shipped installer.
+  welcome_html="$(cat "$RES_BUILD/en.lproj/welcome.html")"
+  welcome_html="${welcome_html//@HALFTONE_NOTE@/$note}"
+  printf '%s\n' "$welcome_html" > "$RES_BUILD/en.lproj/welcome.html"
+
+  dist_xml="$(cat "$ROOT/distrib/distribution-install.xml.in")"
+  dist_xml="${dist_xml//@VERSION@/$VERSION}"
+  dist_xml="${dist_xml//@TITLE@/$title}"
+  printf '%s\n' "$dist_xml" > "$DISTRIB/distribution-install.xml"
+  productbuild \
+    --distribution "$DISTRIB/distribution-install.xml" \
+    --package-path "$DISTRIB" \
+    --resources "$RES_BUILD" \
+    --sign "$SIGN_ID" \
+    "$DISTRIB/$pkg_name.pkg"
+  notarize_and_staple "$DISTRIB/$pkg_name.pkg"
+  rm -rf "$RES_BUILD"
+done
 
 echo "Building UninstallSisterDrivers.pkg ($VERSION)…"
 pkgbuild \
@@ -157,7 +228,7 @@ notarize_and_staple "$DISTRIB/UninstallBrotherDrivers.pkg"
 
 echo
 echo "Verifying signatures and notarization…"
-for pkg in InstallSisterDrivers UninstallSisterDrivers UninstallBrotherDrivers; do
+for pkg in "${install_pkg_names[@]}" UninstallSisterDrivers UninstallBrotherDrivers; do
   echo "--- $pkg.pkg ---"
   pkgutil --check-signature "$DISTRIB/$pkg.pkg"
   spctl --assess --type install -vv "$DISTRIB/$pkg.pkg"

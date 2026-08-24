@@ -63,10 +63,12 @@ running daemon.
 Versioning is semver (`MAJOR.MINOR.PATCH`), pre-1.0 while the driver is in
 beta. To cut a release: bump `project(sisterhl2030 VERSION …)` in
 `CMakeLists.txt`, update this file if the example version string above is
-now stale, rebuild the three packages with
-`Scripts/build_distribution_packages.sh`, commit, then tag the commit
-`vMAJOR.MINOR.PATCH` (e.g. `v0.9.1`) with `git tag`. The tag is what
-`gh release create` attaches the three `.pkg` files from `distrib/` to.
+now stale, rebuild the four packages with
+`Scripts/build_distribution_packages.sh` (it compiles `sister-printer-app`
+twice, once per halftone screen -- see "Two print styles" in README.md),
+commit, then tag the commit `vMAJOR.MINOR.PATCH` (e.g. `v0.9.1`) with
+`git tag`. The tag is what `gh release create` attaches the four `.pkg`
+files from `distrib/` to.
 Release notes are user-facing only — what changed for someone printing to
 the HL-2030, in short bullet-point prose — never internal detail like
 tests, CI, or documentation changes.
