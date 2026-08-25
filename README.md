@@ -59,6 +59,10 @@ Not sure which? Pencil style is the one this driver has always shipped
 with — reach for Newspaper style if what you print is mostly documents,
 line art or text rather than photos.
 
+| Newspaper style | Pencil style |
+| :---: | :---: |
+| ![Newspaper style halftone](docs/am_ht.png) | ![Pencil style halftone](docs/fm_ht.png) |
+
 ## Installing
 
 1. Go to the [Releases page](https://github.com/RuiNelson/SisterHL2030/releases)

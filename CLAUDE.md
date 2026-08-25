@@ -52,7 +52,7 @@ the screen selection might have changed — `Install Sister HL2030.sh` already
 does this; a fresh `build -B` directory doesn't need it.
 
 The driver version is `project(sisterhl2030 VERSION …)` in `CMakeLists.txt`
-plus the git sha (`0.9.1+abc1234def56`). Bump the CMake version when shipping
+plus the git sha (`0.9.2+abc1234def56`). Bump the CMake version when shipping
 a user-visible driver change. `sister-printer-app --version` prints the full
 string; PAPPL advertises the semver half as `printer-firmware-string-version`.
 `Scripts/Check Sister HL2030.sh` compares the build, the install, and the
@@ -66,7 +66,7 @@ beta. To cut a release: bump `project(sisterhl2030 VERSION …)` in
 now stale, rebuild the four packages with
 `Scripts/build_distribution_packages.sh` (it compiles `sister-printer-app`
 twice, once per halftone screen -- see "Two print styles" in README.md),
-commit, then tag the commit `vMAJOR.MINOR.PATCH` (e.g. `v0.9.1`) with
+commit, then tag the commit `vMAJOR.MINOR.PATCH` (e.g. `v0.9.2`) with
 `git tag`. The tag is what `gh release create` attaches the four `.pkg`
 files from `distrib/` to.
 Release notes are user-facing only — what changed for someone printing to
