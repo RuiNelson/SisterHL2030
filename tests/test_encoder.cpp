@@ -357,32 +357,53 @@ int main() {
       using sisterhl2030::engine_transfer;
       bool am45_identity = true;
       for (int res : {300, 600, 1200}) {
-        for (bool eco : {false, true}) {
-          const std::vector<uint8_t> table = dot_transfer_lut(
-              engine_transfer(sisterhl2030::kAm45Screen,
-                              sisterhl2030::device_grid(res), eco));
-          for (int i = 0; i < 256; ++i) {
-            if (table[static_cast<size_t>(i)] != i) {
-              am45_identity = false;
-            }
+        const std::vector<uint8_t> table = dot_transfer_lut(engine_transfer(
+            sisterhl2030::kAm45Screen, sisterhl2030::device_grid(res)));
+        for (int i = 0; i < 256; ++i) {
+          if (table[static_cast<size_t>(i)] != i) {
+            am45_identity = false;
           }
         }
       }
       expect(am45_identity, "AM45 asks for exactly what it was given");
-      expect(dot_transfer_lut(engine_transfer(sisterhl2030::kAtkinsonScreen,
-                                              sisterhl2030::device_grid(600),
-                                              true))[128] != 128,
+      expect(dot_transfer_lut(engine_transfer(
+                 sisterhl2030::kAtkinsonScreen,
+                 sisterhl2030::device_grid(600)))[128] != 128,
              "and Atkinson does not, so the two really are separate");
       expect(sisterhl2030::active_screen().name != nullptr,
              "the build knows which screen it prints with");
 
-      // ECONOMODE is a flat toner-layer factor, so it can never reach solid.
-      DotTransfer eco = at600;
-      eco.economode_gain = sisterhl2030::kAtkinsonEconomodeGain;
-      expect(printed_coverage(eco, 1.0f) < 1.0f,
-             "ECONOMODE cannot lay down a full solid");
-      expect(dot_transfer_lut(eco)[128] > lut600[128],
-             "ECONOMODE has to be asked for more to match");
+      // ECONOMODE is the printer's business, not the halftone's: it must not
+      // reach the darkness model at all. DotTransfer no longer has a term for
+      // it, so the check that keeps it out is that one grid gives one curve --
+      // draft and normal share the ECONOMODE flag but differ here purely by
+      // geometry, and nothing in the model can tell whether the flag is set.
+      using sisterhl2030::ink_limit;
+      const std::vector<uint8_t> draft_lut =
+          dot_transfer_lut(engine_transfer(sisterhl2030::kAtkinsonScreen,
+                                           sisterhl2030::device_grid(300)));
+      const std::vector<uint8_t> normal_lut =
+          dot_transfer_lut(engine_transfer(sisterhl2030::kAtkinsonScreen,
+                                           sisterhl2030::device_grid(600)));
+      const std::vector<uint8_t> fine_lut =
+          dot_transfer_lut(engine_transfer(sisterhl2030::kAtkinsonScreen,
+                                           sisterhl2030::device_grid(1200)));
+      expect(draft_lut != normal_lut,
+             "the grid alone separates the modes, with no ECONOMODE term");
+
+      // The ink limit: draft and normal cap at 80 % of black, fine at 90 %,
+      // and the cap binds the top of the table rather than scaling it.
+      auto peak = [](const std::vector<uint8_t>& t) {
+        return *std::max_element(t.begin(), t.end());
+      };
+      expect(peak(draft_lut) == 204 && peak(normal_lut) == 204,
+             "draft and normal never ask for more than 80 %% of black");
+      expect(peak(fine_lut) == 230, "and fine stops at 90 %%");
+      expect(ink_limit(sisterhl2030::kAm45Screen,
+                       sisterhl2030::device_grid(600)) == 1.0f &&
+                 ink_limit(sisterhl2030::kAm45Screen,
+                           sisterhl2030::device_grid(1200)) == 1.0f,
+             "while AM45 is uncapped, as it was judged on paper");
     }
   }
 

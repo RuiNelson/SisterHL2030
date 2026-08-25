@@ -323,20 +323,21 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   }
 
   // Darkness is a model, not a set of measured per-mode multipliers: one
-  // physical erosion length per screen drives every mode. See "Engine dot
-  // transfer" and "Per-screen calibration" in encoder/halftone.h.
-  const sisterhl2030::DotTransfer dt = sisterhl2030::engine_transfer(
-      kScreen, grid, state->params.economode);
+  // physical erosion length per screen drives every mode, and ECONOMODE is no
+  // part of it. See "Engine dot transfer" and "Per-screen calibration" in
+  // encoder/halftone.h.
+  const sisterhl2030::DotTransfer dt =
+      sisterhl2030::engine_transfer(kScreen, grid);
   const std::vector<uint8_t> transfer = sisterhl2030::dot_transfer_lut(dt);
   papplLogJob(job, PAPPL_LOGLEVEL_INFO,
               "%s dot transfer at %dx%d dpi, contrast gain %d/100, "
-              "density %d/100, ECONOMODE %s: 25%%/50%%/75%% coverage asks for "
-              "%d/%d/%d of 255.",
+              "density %d/100, ink limit %d%%: 25%%/50%%/75%% coverage asks "
+              "for %d/%d/%d of 255.",
               kScreen.name, grid.dpi_x, grid.dpi_y,
               static_cast<int>(std::lround(sisterhl2030::contrast_gain(dt) * 100.0f)),
               static_cast<int>(std::lround(dt.density * 100.0f)),
-              state->params.economode ? "ON" : "OFF", transfer[64],
-              transfer[128], transfer[191]);
+              static_cast<int>(std::lround(dt.max_toner * 100.0f)),
+              transfer[64], transfer[128], transfer[191]);
   sisterhl2030::apply_transfer(state->toner.data(), state->toner.size(),
                                transfer);
 

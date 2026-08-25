@@ -201,16 +201,32 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
   adjusted. If prints come out wrong, re-measure it. Do not add a per-mode
   fudge factor back, and do not reach for `density` to fix a *shape* problem:
   `density` is the overall light/dark knob and nothing else.
+- **ECONOMODE is not an input to the darkness model.** `engine_transfer()`
+  takes a screen and a grid, and nothing else — the same grid always yields
+  the same tone curve. Compensating for ECONOMODE would mean asking for *more*
+  coverage in exactly the modes picked to lay down less, i.e. spending the
+  toner the setting exists to save. The flag is still sent as PJL (`job.cc`)
+  and still selects the engine's own behaviour; it just never feeds back into
+  the halftone. The old `kAtkinsonEconomodeGain` was never measured anyway —
+  it was the ratio of the two hand-tuned gains this model replaced. Don't
+  reintroduce it.
 - **The two screens are calibrated separately and must stay that way.**
-  `kAtkinsonSuppressionUm`/`kAtkinsonEconomodeGain`/`kAtkinsonDensity` and
+  `kAtkinsonSuppressionUm`/`kAtkinsonDensity`/`kAtkinsonMaxToner*` and
   the `kAm45*` equivalents are independent sets
   in `halftone.h`; `active_screen()` picks one at compile time. AM45 was
   judged right on paper as it is, so its numbers make `dot_transfer_lut()`
   short-circuit to an exact identity — a real calibration result, not a
-  placeholder. `test_encoder` asserts that identity on every grid and in both
-  ECONOMODE states, so editing the Atkinson numbers can never move an AM45
+  placeholder. `test_encoder` asserts that identity on every grid, so editing
+  the Atkinson numbers can never move an AM45
   pixel. Don't merge the two sets back together, and don't "fix" AM45 by
   copying Atkinson's numbers over.
+- **Ink limit is intent, not physics.** `kAtkinsonMaxTonerDraftNormal` (80 %)
+  and `kAtkinsonMaxTonerFine` (90 %) clip the top of the transfer table, so
+  even a nominal 255 dithers rather than printing a flat solid. They are keyed
+  on the print *mode* via `ink_limit()`, which reads it off the grid (fine is
+  the only one with non-square pixels), **not** on the ECONOMODE flag those
+  modes happen to set — the two agree today and must not be conflated. AM45 is
+  uncapped at 100 %.
 
 ## Source layout
 

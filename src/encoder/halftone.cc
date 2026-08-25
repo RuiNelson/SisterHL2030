@@ -248,7 +248,7 @@ float contrast_gain(const DotTransfer& dt) {
 float printed_coverage(const DotTransfer& dt, float pattern_coverage) {
   const float c = std::clamp(pattern_coverage, 0.0f, 1.0f);
   if (c <= 0.0f || c >= 1.0f) {
-    return c * dt.economode_gain;
+    return c;
   }
   // A gain on the log-odds: the minority phase is pushed toward the majority
   // one, hard where the gain is high. Monotone for any gain, and pinned at 0,
@@ -257,7 +257,7 @@ float printed_coverage(const DotTransfer& dt, float pattern_coverage) {
   const float g = contrast_gain(dt);
   const float black = std::pow(c, g);
   const float white = std::pow(1.0f - c, g);
-  return (black / (black + white)) * dt.economode_gain;
+  return black / (black + white);
 }
 
 const std::vector<uint8_t>& screen_response(bool clustered, unsigned cell) {
@@ -311,15 +311,21 @@ float paper_coverage(const DotTransfer& dt, float nominal) {
   return printed_coverage(dt, screen[static_cast<size_t>(level)] / 255.0f);
 }
 
+float ink_limit(const ScreenCalibration& screen, const DeviceGrid& grid) {
+  // Fine is the only mode whose pixels are not square (1200x600), so the grid
+  // identifies it without the caller having to pass the quality along.
+  const bool fine = grid.dpi_x > grid.dpi_y;
+  return fine ? screen.max_toner_fine : screen.max_toner_draft_normal;
+}
+
 DotTransfer engine_transfer(const ScreenCalibration& screen,
-                            const DeviceGrid& grid, bool economode) {
+                            const DeviceGrid& grid) {
   DotTransfer dt;
   dt.pixel_w_um = pixel_um(grid.dpi_x);
   dt.pixel_h_um = pixel_um(grid.dpi_y);
   dt.suppression_um = screen.suppression_um;
-  dt.economode_gain = economode ? screen.economode_gain : 1.0f;
   dt.density = screen.density;
-  dt.max_toner = economode ? screen.max_toner_economode : screen.max_toner_full;
+  dt.max_toner = ink_limit(screen, grid);
   dt.clustered = screen.clustered;
   dt.cell = screen.cell > 0 ? screen.cell : 1;
   dt.linearize = screen.linearize;
@@ -340,8 +346,7 @@ std::vector<uint8_t> dot_transfer_lut(const DotTransfer& dt) {
   };
 
   std::vector<uint8_t> lut(256, 0);
-  if (dt.suppression_um == 0.0f && dt.economode_gain == 1.0f &&
-      dt.density == 1.0f && !dt.linearize) {
+  if (dt.suppression_um == 0.0f && dt.density == 1.0f && !dt.linearize) {
     // A screen calibrated as needing no correction. Short-circuit to an exact
     // identity rather than inverting a curve that is already the identity:
     // it is not just faster, it guarantees byte-for-byte that this screen's

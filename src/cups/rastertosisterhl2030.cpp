@@ -383,15 +383,15 @@ int main(int argc, char* argv[]) {
           std::fprintf(stderr, "INFO: mean toner before dither %.1f / 255\n",
                        mean);
           const sisterhl2030::DotTransfer dt =
-              sisterhl2030::engine_transfer(kScreen, grid, params.economode);
+              sisterhl2030::engine_transfer(kScreen, grid);
           const std::vector<uint8_t> transfer =
               sisterhl2030::dot_transfer_lut(dt);
           std::fprintf(stderr,
                        "INFO: %s dot transfer %dx%d dpi gain %.2f density "
-                       "%.2f ECONOMODE=%s, 25/50/75%% ask for %u/%u/%u\n",
+                       "%.2f ink limit %.0f%%, 25/50/75%% ask for %u/%u/%u\n",
                        kScreen.name, grid.dpi_x, grid.dpi_y,
                        sisterhl2030::contrast_gain(dt), dt.density,
-                       params.economode ? "ON" : "OFF",
+                       dt.max_toner * 100.0f,
                        transfer[64], transfer[128], transfer[191]);
           sisterhl2030::apply_transfer(toner.data(), toner.size(), transfer);
           if (kScreen.clustered) {

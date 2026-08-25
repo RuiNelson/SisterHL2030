@@ -156,8 +156,15 @@ inline float pixel_um(int dpi) { return 25400.0f / static_cast<float>(dpi); }
 // pattern's log-odds -- the standard shape for a threshold process, monotone
 // for any gain, and fixed at 0, 0.5 and 1.
 //
-// `economode_gain` is separate and not geometric: ECONOMODE thins the toner
-// layer rather than moving any boundary, so it scales the whole result.
+// ECONOMODE IS NOT PART OF THIS MODEL, deliberately. It thins the toner layer
+// on the printer's side of the wire, and the driver's job is to ask for the
+// coverage it wants, not to chase what the engine then does with the request.
+// Compensating for it here would mean asking for MORE coverage precisely in
+// the modes chosen to use less -- fighting the setting instead of honouring
+// it. So the model is purely geometric: grid and screen in, tone curve out,
+// identical whether or not the page will be printed with ECONOMODE on. The
+// PJL flag is still sent (see job.cc); it just does not feed back into the
+// halftone.
 //
 // `density` is not the engine at all -- it is intent. It is a gamma on the
 // requested coverage, and the one knob for "the page should be darker or
@@ -169,14 +176,12 @@ struct DotTransfer {
   float pixel_w_um = 42.333f;
   float pixel_h_um = 42.333f;
   float suppression_um = 0.0f;
-  float economode_gain = 1.0f;
   float density = 1.0f;  // >1 darker, <1 lighter; 1 = reproduce what was asked
   // Ink limit: the transfer table never asks the screen for more than this
   // fraction of full black, however dark the page requests. 1.0 (the
   // default) leaves solid black solid; below that, even a nominal 255
-  // dithers at the capped level instead of printing flat. Unlike
-  // `economode_gain`, which scales the whole tone curve, this only clips
-  // the top of it.
+  // dithers at the capped level instead of printing flat. Unlike `density`,
+  // which bends the whole tone curve, this only clips the top of it.
   float max_toner = 1.0f;
   bool clustered = false;  // AM45 rather than a dispersed (FM) screen
   unsigned cell = 4;       // AM45 dot radius in device pixels
@@ -258,15 +263,16 @@ void apply_transfer(uint8_t* toner, size_t n, const std::vector<uint8_t>& lut);
 // indistinguishable, the 5 % patch invisible, and all six colour ramps --
 // with nothing else adjusted.
 //
-// `kAtkinsonEconomodeGain` is still inferred rather than measured (from the
-// ratio of the two old hand-tuned constants, 1.28 with ECONOMODE on against
-// 1.18 with it off). Printing the sheet once at Normal and once at High pins
-// it properly.
+// It is the ONLY measured number here, and every mode's tone curve is derived
+// from it geometrically. There is deliberately no ECONOMODE term to go with
+// it: the one that used to sit here was never measured either, just the ratio
+// of the two hand-tuned per-mode gains this model replaced. Rather than
+// measure a compensation for ECONOMODE, the driver does not compensate at all
+// -- see "ECONOMODE IS NOT PART OF THIS MODEL" above.
 //
 // To re-measure: print the sheet, read the highlight wedge. Adjust these
 // numbers, not the modes.
 constexpr float kAtkinsonSuppressionUm = 58.4f;
-constexpr float kAtkinsonEconomodeGain = 0.92f;
 // Overall darkness, once the shape is right: >1 darker, <1 lighter. Starts
 // neutral, so the page reproduces the coverage it was asked for. This is the
 // knob for "too light" / "too dark" -- nothing else.
@@ -276,11 +282,16 @@ constexpr float kAtkinsonDensity = 1.0f;
 constexpr bool kAtkinsonLinearize = true;
 // Ink limit: Atkinson was printing darker than it needed to, so cap how much
 // toner it is ever allowed to put down, independent of the darkness model
-// above. Draft and Normal (ECONOMODE on) cap at 80 %, Fine/Best (ECONOMODE
-// off) at 90 % -- both modes still reach a clearly dark black, just short of
-// a flat solid.
-constexpr float kAtkinsonMaxTonerEconomode = 0.80f;
-constexpr float kAtkinsonMaxTonerFull = 0.90f;
+// above. Draft and Normal cap at 80 %, Fine at 90 % -- every mode still
+// reaches a clearly dark black, just short of a flat solid.
+//
+// Keyed on the print MODE, not on the ECONOMODE flag those modes happen to
+// set. The two agree today (draft and normal are the ECONOMODE-on modes), but
+// they are different things: this is an intent knob about how much toner a
+// quality level deserves, and it must not silently follow if the ECONOMODE
+// mapping in the filter ever changes.
+constexpr float kAtkinsonMaxTonerDraftNormal = 0.80f;
+constexpr float kAtkinsonMaxTonerFine = 0.90f;
 
 // AM45 (clustered dot at 45 degrees), the "Newspaper style" build.
 //
@@ -295,25 +306,23 @@ constexpr float kAtkinsonMaxTonerFull = 0.90f;
 // If AM45 ever does need correcting, measure it with the same sheet and set
 // these; nothing about Atkinson is involved.
 constexpr float kAm45SuppressionUm = 0.0f;
-constexpr float kAm45EconomodeGain = 1.0f;
 constexpr float kAm45Density = 1.0f;
 constexpr bool kAm45Linearize = false;
 constexpr unsigned kAm45Cell = 4;  // also the dot radius passed to the screen
 // AM45 was judged right on paper as it prints today -- no ink cap.
-constexpr float kAm45MaxTonerEconomode = 1.0f;
-constexpr float kAm45MaxTonerFull = 1.0f;
+constexpr float kAm45MaxTonerDraftNormal = 1.0f;
+constexpr float kAm45MaxTonerFine = 1.0f;
 
 struct ScreenCalibration {
   bool clustered;
   unsigned cell;
   float suppression_um;
-  float economode_gain;
   float density;
   bool linearize;
-  // Ink limit (fraction of full black), separately for ECONOMODE on and off
-  // -- see `DotTransfer::max_toner`.
-  float max_toner_economode;
-  float max_toner_full;
+  // Ink limit (fraction of full black), per print mode -- see
+  // `DotTransfer::max_toner` and `ink_limit()`.
+  float max_toner_draft_normal;
+  float max_toner_fine;
   const char* name;
 };
 
@@ -321,21 +330,19 @@ constexpr ScreenCalibration kAtkinsonScreen = {
     false,
     0,
     kAtkinsonSuppressionUm,
-    kAtkinsonEconomodeGain,
     kAtkinsonDensity,
     kAtkinsonLinearize,
-    kAtkinsonMaxTonerEconomode,
-    kAtkinsonMaxTonerFull,
+    kAtkinsonMaxTonerDraftNormal,
+    kAtkinsonMaxTonerFine,
     "Atkinson"};
 constexpr ScreenCalibration kAm45Screen = {
     true,
     kAm45Cell,
     kAm45SuppressionUm,
-    kAm45EconomodeGain,
     kAm45Density,
     kAm45Linearize,
-    kAm45MaxTonerEconomode,
-    kAm45MaxTonerFull,
+    kAm45MaxTonerDraftNormal,
+    kAm45MaxTonerFine,
     "AM45"};
 
 // Whichever screen this build prints with, chosen by SISTER_HALFTONE_SCREEN
@@ -349,9 +356,16 @@ constexpr ScreenCalibration active_screen() {
 #endif
 }
 
-// Fill in a DotTransfer for one screen on one device grid.
+// This screen's ink limit for the mode that `grid` belongs to. Fine is the
+// 1200x600 grid -- the only one with non-square pixels, because it is the only
+// mode where the engine resolves more across the scan than down it.
+float ink_limit(const ScreenCalibration& screen, const DeviceGrid& grid);
+
+// Fill in a DotTransfer for one screen on one device grid. There is no
+// ECONOMODE argument on purpose: the flag does not enter the darkness model
+// at all, so the same grid always yields the same tone curve.
 DotTransfer engine_transfer(const ScreenCalibration& screen,
-                            const DeviceGrid& grid, bool economode);
+                            const DeviceGrid& grid);
 
 }  // namespace sisterhl2030
 
