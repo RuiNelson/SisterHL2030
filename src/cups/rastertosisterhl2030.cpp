@@ -25,11 +25,9 @@ volatile sig_atomic_t interrupted = 0;
 
 void on_sigterm(int) { interrupted = 1; }
 
-#if defined(SISTERHL2030_HALFTONE_AM45)
-constexpr const char* kHalftoneScreenName = "AM45";
-#else
-constexpr const char* kHalftoneScreenName = "Atkinson";
-#endif
+// The screen this build prints with, and the darkness numbers calibrated for
+// it. Constexpr, so the other screen folds out of the binary.
+constexpr sisterhl2030::ScreenCalibration kScreen = sisterhl2030::active_screen();
 
 std::string upper(std::string s) {
   for (char& c : s) {
@@ -306,14 +304,20 @@ int main(int argc, char* argv[]) {
 
     const bool already_1bit =
         header.cupsBitsPerPixel == 1 && header.cupsNumColors <= 1;
-    const bool down_to_300 =
-        params.resolution == 300 && pjl_resolution(header) >= 450;
+    // Same device grid and same darkness model as the PAPPL app: this filter
+    // is the reference path for comparing encoder output, so it has to make
+    // the same bits.
+    const sisterhl2030::DeviceGrid grid =
+        sisterhl2030::device_grid(params.resolution);
+    const int raster_dpi = pjl_resolution(header);
+    const bool resampling =
+        raster_dpi != grid.dpi_x || raster_dpi != grid.dpi_y;
     std::fprintf(stderr,
                  "INFO: page %ux%u %ubit/%u colorspace=%u 1bit=%s "
                  "mode=%s ECONOMODE=%s\n",
                  header.cupsWidth, header.cupsHeight, header.cupsBitsPerPixel,
                  header.cupsNumColors, header.cupsColorSpace,
-                 already_1bit ? "passthrough" : kHalftoneScreenName,
+                 already_1bit ? "passthrough" : kScreen.name,
                  mode_name(params.resolution),
                  params.economode ? "ON" : "OFF");
 
@@ -323,7 +327,7 @@ int main(int argc, char* argv[]) {
     unsigned out_h = header.cupsHeight;
     std::vector<uint8_t> page_bits;
 
-    if (already_1bit && !down_to_300) {
+    if (already_1bit && !resampling) {
       packed.resize((out_w + 7) / 8);
       page_bits.resize(packed.size() * out_h);
       for (unsigned y = 0; y < out_h; ++y) {
@@ -366,25 +370,39 @@ int main(int argc, char* argv[]) {
           }
         }
       }
-      if (down_to_300) {
-        sisterhl2030::box_downsample_2x(toner, out_w, out_h);
-        std::fprintf(stderr, "INFO: draft downsample to %ux%u (300 dpi)\n",
-                     out_w, out_h);
+      if (resampling) {
+        sisterhl2030::resample_to_grid(toner, out_w, out_h, raster_dpi, grid);
+        std::fprintf(stderr, "INFO: resampled to the %dx%d dpi grid, %ux%u\n",
+                     grid.dpi_x, grid.dpi_y, out_w, out_h);
       }
-      if (!already_1bit || down_to_300) {
+      if (!already_1bit || resampling) {
         if (!already_1bit) {
           const double mean =
               static_cast<double>(toner_sum) /
               (static_cast<double>(header.cupsWidth) * header.cupsHeight);
           std::fprintf(stderr, "INFO: mean toner before dither %.1f / 255\n",
                        mean);
-#if defined(SISTERHL2030_HALFTONE_AM45)
-          sisterhl2030::clustered_dot_45(toner.data(), out_w, out_h);
-#else
-          sisterhl2030::atkinson(toner.data(), out_w, out_h);
-#endif
+          const sisterhl2030::DotTransfer dt =
+              sisterhl2030::engine_transfer(kScreen, grid, params.economode);
+          const std::vector<uint8_t> transfer =
+              sisterhl2030::dot_transfer_lut(dt);
+          std::fprintf(stderr,
+                       "INFO: %s dot transfer %dx%d dpi gain %.2f density "
+                       "%.2f ECONOMODE=%s, 25/50/75%% ask for %u/%u/%u\n",
+                       kScreen.name, grid.dpi_x, grid.dpi_y,
+                       sisterhl2030::contrast_gain(dt), dt.density,
+                       params.economode ? "ON" : "OFF",
+                       transfer[64], transfer[128], transfer[191]);
+          sisterhl2030::apply_transfer(toner.data(), toner.size(), transfer);
+          if (kScreen.clustered) {
+            sisterhl2030::clustered_dot_45(toner.data(), out_w, out_h,
+                                           kScreen.cell);
+          } else {
+            sisterhl2030::atkinson(toner.data(), out_w, out_h);
+          }
         } else {
-          // 1-bit draft: 2×2 box already produced 0..255; re-threshold.
+          // 1-bit resampled onto another grid: the box average produced
+          // 0..255 again, so re-threshold.
           for (uint8_t& t : toner) {
             t = t >= 128 ? 255 : 0;
           }
@@ -401,18 +419,29 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    // HQ1200's bitmap is twice the 600 dpi page vertically as well, but the
+    // engine only resolves 1200 across the scan, so each dithered row of the
+    // 1200x600 grid goes out `repeat` times.
+    const unsigned repeat =
+        grid.dpi_y > 0
+            ? static_cast<unsigned>(std::max(1, params.resolution / grid.dpi_y))
+            : 1u;
     unsigned row = 0;
+    unsigned dup = 0;
     auto next_line = [&](std::vector<uint8_t>& buf) {
       if (row >= out_h) {
         return false;
       }
       buf.assign(page_bits.data() + static_cast<size_t>(row) * packed.size(),
                  page_bits.data() + static_cast<size_t>(row + 1) * packed.size());
-      ++row;
+      if (++dup >= repeat) {
+        dup = 0;
+        ++row;
+      }
       return true;
     };
 
-    job.encode_page(params, static_cast<int>(out_h),
+    job.encode_page(params, static_cast<int>(out_h * repeat),
                     static_cast<int>(packed.size()), next_line);
     std::fprintf(stderr, "PAGE: %d %u\n", job.pages(), header.NumCopies);
   }

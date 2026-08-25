@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -46,11 +47,9 @@ constexpr const char* kDnsSdName = "Brother HL-2030";
 // empty one the macOS Supply Levels panel stays empty until the first real
 // print. Submitting this costs no paper.
 constexpr const char* kStatusJobName = ".sister-status";
-#if defined(SISTERHL2030_HALFTONE_AM45)
-constexpr const char* kHalftoneScreenName = "AM45";
-#else
-constexpr const char* kHalftoneScreenName = "Atkinson";
-#endif
+// The screen this build prints with, and the darkness numbers calibrated for
+// it. Constexpr, so the other screen folds out of the binary.
+constexpr sisterhl2030::ScreenCalibration kScreen = sisterhl2030::active_screen();
 
 // Per-job state. PAPPL hands it back to every raster callback.
 struct JobState {
@@ -64,33 +63,6 @@ struct JobState {
   unsigned lines_seen = 0;
   int raster_dpi = 600;
 };
-
-// The old CUPS path never converted colour itself: macOS handed the filter a
-// grey raster (CUPS_CSPACE_W) and the laser curve was tuned against those
-// values. macOS's PDF rasteriser lifts tone as it goes -- for the flag it
-// emits grey 186/144 where ColorSync's own transform gives 130/87 -- so a
-// colorimetrically correct conversion lands lighter than the prints this
-// driver has always produced.
-//
-// PAPPL has no equivalent stage, so match the old output by measurement
-// rather than by theory. Solving for the exponent that reproduces the old
-// coverage gives 0.841 on test_fixtures/flag.png and 0.869 on the photo
-// fixture; 0.85 splits them. Re-derive with Scripts/decode_job.py if the
-// pipeline changes: the targets are 40.2% and 40.5% black coverage.
-constexpr float kToneCalibration = 0.85f;
-
-const std::array<uint8_t, 256>& tone_curve() {
-  static const std::array<uint8_t, 256> lut = [] {
-    std::array<uint8_t, 256> t{};
-    for (int i = 0; i < 256; ++i) {
-      const float v = std::pow(i / 255.0f, kToneCalibration);
-      t[static_cast<size_t>(i)] =
-          static_cast<uint8_t>(std::lround(v * 255.0f));
-    }
-    return t;
-  }();
-  return lut;
-}
 
 // Adapt the PAPPL device to the FILE* the encoder writes to.
 int device_write(void* cookie, const char* buffer, int bytes) {
@@ -153,10 +125,13 @@ void quality_to_params(ipp_quality_t quality, int raster_dpi,
   }
 }
 
-// Convert one PAPPL raster line to toner 0..255. 8-bit sGray from macOS is
-// ColorSync-linearised already, so it uses the laser curve as-is. PAPPL's
-// own sRGB raster (JPEG/PNG submitted to the app) does not, and gets the
-// extra 0.85 calibration so the two paths land on the same coverage.
+// Convert one PAPPL raster line to toner 0..255. Both paths go through the
+// same laser curve, and `rgb_to_toner` is built so a neutral pixel produces
+// exactly what `device_gray_to_toner` produces -- a page of greys prints
+// identically whether it arrives as sRGB or as sGray. (There used to be an
+// extra 0.85 exponent on the sRGB path, calibrated to reproduce output from
+// before the tone chain was modelled. With sRGB now the normal path it would
+// only darken every neutral away from the calibration.)
 void line_to_toner(const cups_page_header2_t& header, const unsigned char* line,
                    unsigned width, uint8_t* row) {
   const unsigned bpp = header.cupsBitsPerPixel;
@@ -177,10 +152,9 @@ void line_to_toner(const cups_page_header2_t& header, const unsigned char* line,
 
   if (bpp >= 24) {
     const unsigned stride = bpp / 8;
-    const std::array<uint8_t, 256>& tone = tone_curve();
     for (unsigned x = 0; x < width; ++x) {
       const unsigned char* px = line + static_cast<size_t>(x) * stride;
-      row[x] = tone[sisterhl2030::rgb_to_toner(px[0], px[1], px[2])];
+      row[x] = sisterhl2030::rgb_to_toner(px[0], px[1], px[2]);
     }
     return;
   }
@@ -331,35 +305,40 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   unsigned width = state->width;
   unsigned height = state->height;
 
-  // Draft is 300 dpi. If the client already sent 300 dpi (Apple's ipp2ppd
-  // mapping), leave it; if it sent 600, box-filter down.
-  if (state->params.resolution == 300 && state->raster_dpi >= 450) {
-    sisterhl2030::box_downsample_2x(state->toner, width, height);
+  // Put the contone page on the grid the engine actually addresses BEFORE
+  // dithering: 300x300 for draft, 600x600 for normal, 1200x600 for HQ1200.
+  // Dithering at some other pitch and rescaling the 1-bit result afterwards
+  // discards the very placement precision the mode exists for -- HQ1200 in
+  // particular used to dither at 600 and pixel-double, which produced 600 dpi
+  // dots wearing a 1200 dpi bitmap.
+  const sisterhl2030::DeviceGrid grid =
+      sisterhl2030::device_grid(state->params.resolution);
+  sisterhl2030::resample_to_grid(state->toner, width, height,
+                                 state->raster_dpi, grid);
+  if (width != state->width || height != state->height) {
+    papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+                "Resampled %ux%u at %d dpi to the %dx%d dpi device grid, "
+                "%ux%u.", state->width, state->height, state->raster_dpi,
+                grid.dpi_x, grid.dpi_y, width, height);
   }
 
-#if defined(SISTERHL2030_HALFTONE_AM45)
-  // The 1.28/1.18 dot-gain compensation below (see the #else) was measured
-  // against Atkinson's failure mode on this engine: isolated single-pixel
-  // dots that go missing more often at higher dpi. A clustered-dot screen
-  // groups every dot into a solid multi-pixel blob for exactly this reason,
-  // so it should not lose coverage the same way -- but that is a hypothesis,
-  // not a measurement, and reusing Atkinson's numbers here would stack an
-  // unverified resolution-dependent correction on top of an unverified
-  // algorithm. No compensation until AM45 has its own hardware measurement.
-  const float gain = 1.0f;
-#else
-  // Draft at 300 dpi is the reference look. 600 and 1200 have less dot
-  // gain, so they need more digital coverage to match. Fine at 1.28 was
-  // a hair too heavy once the page was full size (ECONOMODE is already
-  // off); 1.18 sits between that and the washed-out 0.82.
-  float gain = 1.0f;
-  if (state->params.resolution == 600) {
-    gain = 1.28f;
-  } else if (state->params.resolution == 1200) {
-    gain = 1.18f;
-  }
-#endif
-  sisterhl2030::scale_coverage(state->toner.data(), state->toner.size(), gain);
+  // Darkness is a model, not a set of measured per-mode multipliers: one
+  // physical erosion length per screen drives every mode. See "Engine dot
+  // transfer" and "Per-screen calibration" in encoder/halftone.h.
+  const sisterhl2030::DotTransfer dt = sisterhl2030::engine_transfer(
+      kScreen, grid, state->params.economode);
+  const std::vector<uint8_t> transfer = sisterhl2030::dot_transfer_lut(dt);
+  papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+              "%s dot transfer at %dx%d dpi, contrast gain %d/100, "
+              "density %d/100, ECONOMODE %s: 25%%/50%%/75%% coverage asks for "
+              "%d/%d/%d of 255.",
+              kScreen.name, grid.dpi_x, grid.dpi_y,
+              static_cast<int>(std::lround(sisterhl2030::contrast_gain(dt) * 100.0f)),
+              static_cast<int>(std::lround(dt.density * 100.0f)),
+              state->params.economode ? "ON" : "OFF", transfer[64],
+              transfer[128], transfer[191]);
+  sisterhl2030::apply_transfer(state->toner.data(), state->toner.size(),
+                               transfer);
 
   // How much tone did we actually receive? If PAPPL already reduced the page
   // to black and white there is nothing for error diffusion to spread.
@@ -373,54 +352,49 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
               "Page %ux%u: %u of %u samples are mid-tone (%s via %s).", width,
               height, static_cast<unsigned>(midtones),
               static_cast<unsigned>(state->toner.size()),
-              midtones ? "dithering" : "already 1-bit", kHalftoneScreenName);
+              midtones ? "dithering" : "already 1-bit", kScreen.name);
   papplLogJob(job, PAPPL_LOGLEVEL_INFO,
               "Received %u of %u raster lines.", state->lines_seen,
               height);
 
-#if defined(SISTERHL2030_HALFTONE_AM45)
-  sisterhl2030::clustered_dot_45(state->toner.data(), width, height);
-#else
-  sisterhl2030::atkinson(state->toner.data(), width, height);
-#endif
-
-  // HQ1200's pixel grid is twice 600 dpi. Dither at 600 first: a 1200 dpi A4
-  // toner buffer is ~140 million 8-bit samples, and Atkinson's serpentine
-  // error diffusion never finishes at that size. Pixel-double the 1-bit rows
-  // as they encode so RAS1200MODE still prints at full size without a 4x
-  // 8-bit page -- this also keeps the screen ruling identical to Normal
-  // quality's dither, just rendered with finer engine dots underneath it.
-  const bool x2 = state->params.resolution == 1200 && state->raster_dpi < 900;
-  if (x2) {
-    papplLogJob(job, PAPPL_LOGLEVEL_INFO,
-                "HQ1200 encoding as %ux%u after dither.", width * 2, height * 2);
+  if (kScreen.clustered) {
+    sisterhl2030::clustered_dot_45(state->toner.data(), width, height,
+                                   kScreen.cell);
+  } else {
+    sisterhl2030::atkinson(state->toner.data(), width, height);
   }
 
-  const unsigned out_w = x2 ? width * 2 : width;
-  const unsigned out_h = x2 ? height * 2 : height;
+  // The bitmap the printer wants is square at PageParams::resolution: at 1200
+  // it is twice the 600 dpi page on BOTH axes (docs/protocol.md, `paperinf`),
+  // while the engine only resolves 1200 across the scan. So the dither above
+  // ran at 1200x600 and each of its rows now goes out twice -- the horizontal
+  // half of the mode is real halftone detail, the vertical half is the
+  // replication the format demands.
+  const unsigned repeat =
+      grid.dpi_y > 0
+          ? static_cast<unsigned>(std::max(1, state->params.resolution / grid.dpi_y))
+          : 1u;
+  const unsigned out_w = width;
+  const unsigned out_h = height * repeat;
+  if (repeat > 1) {
+    papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+                "HQ1200: %ux%u dithered rows encoded as %ux%u.", width, height,
+                out_w, out_h);
+  }
+
   const unsigned bpl = (out_w + 7) / 8;
   std::vector<uint8_t> packed(bpl, 0);
   unsigned src_row = 0;
   unsigned dup = 0;
   auto next_line = [&](std::vector<uint8_t>& out) {
     if (src_row >= height) return false;
-    if (!x2) {
-      sisterhl2030::pack_toner_row(
-          state->toner.data() + static_cast<size_t>(src_row) * width, width,
-          packed.data());
-      out.assign(packed.begin(), packed.end());
-      ++src_row;
-      return true;
-    }
     if (dup == 0) {
-      sisterhl2030::pack_toner_row_2x(
+      sisterhl2030::pack_toner_row(
           state->toner.data() + static_cast<size_t>(src_row) * width, width,
           packed.data());
     }
     out.assign(packed.begin(), packed.end());
-    if (dup == 0) {
-      dup = 1;
-    } else {
+    if (++dup >= repeat) {
       dup = 0;
       ++src_row;
     }
@@ -430,7 +404,7 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   state->job->encode_page(state->params, static_cast<int>(out_h),
                           static_cast<int>(bpl), next_line);
   fflush(state->stream);
-  // Drop the page buffer now: HQ1200's upsampled toner is ~140 MB, and the
+  // Drop the page buffer now: HQ1200's 1200x600 A4 toner is ~70 MB, and the
   // next rstartpage reallocates. Leaving it until rendjob keeps that RAM
   // for the rest of the job and for idle if the client stalls.
   state->toner.clear();
@@ -593,6 +567,21 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
                   sizeof(driver_data->make_and_model));
   driver_data->kind = PAPPL_KIND_DOCUMENT;
   driver_data->ppm = 18;
+  // Mono paper, but this field is what decides whether the driver ever sees
+  // colour at all. PAPPL derives `color-supported` from `ppm_color > 0`
+  // (printer-driver.c); Apple's ipp2ppd reads that boolean when the queue is
+  // created to decide whether to write a `*ColorModel RGB` entry; and that
+  // entry is what makes CUPS rasterise to sRGB instead of an 8-bit sGray that
+  // ColorSync has already flattened by luminance. With it unset, saturated
+  // yellow and cyan reach this driver as very nearly white and `rgb_to_toner`
+  // is never even called.
+  //
+  // Set, deliberately, so the colour-to-grey decision is ours (see
+  // `kChromaFloor`). The cost is a Color/Grayscale control in the print
+  // dialog of a printer that only has black toner. The alternatives were
+  // tried and do not work: a custom gray ICC cannot carry chroma at all, and
+  // a device-link profile is silently ignored by cgpdftoraster.
+  driver_data->ppm_color = 18;
 
   driver_data->rstartjob_cb = rstartjob;
   driver_data->rstartpage_cb = rstartpage;

@@ -147,18 +147,70 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
 - `papplPrinterCreate` reports every `EINVAL` as "Printer names must start with
   a letter or underscore". Read the server log for the real reason.
 - Declaring a raw `format` obliges you to set `printfile_cb`.
+- **Whether the driver sees colour at all is decided in the PPD, not the
+  code.** PAPPL derives `color-supported` from `ppm_color > 0` alone
+  (`printer-driver.c`); Apple's ipp2ppd reads that boolean when the queue is
+  created to decide whether to write a `*ColorModel RGB` entry; and that entry
+  is what makes CUPS rasterise to sRGB (`cupsColorSpace 19`) instead of an
+  8-bit sGray that ColorSync has *already* reduced from colour by luminance.
+  With a Gray-only PPD, `rgb_to_toner` is never called and saturated yellow
+  and cyan arrive very nearly white — pure yellow really is 93% as luminous as
+  white — and **no change to the encoder can bring them back**.
+  `ppm_color` is therefore **set**, and the price is a Color/Grayscale control
+  in the print dialog of a mono printer. Two ways round that were tried and
+  both fail: a gray ICC profile cannot carry chroma at all (ColorSync rejects
+  a GRAY profile whose only transform is a LUT, and ignores the LUT if you add
+  `grayTRC` beside it), and an RGB→GRAY **device link**, though ColorSync's own
+  API applies it correctly, is silently ignored by `cgpdftoraster` — wire one
+  in as `*cupsICCProfile` and the raster comes out byte-identical to Generic
+  Gray. Don't spend a day rediscovering either.
+  The trap to remember: the two halves are latched at different times. The PPD
+  is fixed when `_privileged-create-queue.sh` runs, the driver's answer
+  whenever it restarts, so they can disagree — and a queue generated while
+  `ppm_color` was set keeps working after it is unset, until something
+  regenerates it and colour silently reverts to luminance with no error.
+  Check what the chain actually produces, without printing:
+
+  ```bash
+  cupsfilter -p /etc/cups/ppd/Brother_HL_2030_series.ppd \
+      -m application/vnd.cups-raster test_fixtures/calibration.pdf > /tmp/x.raster
+  ```
+
+  `cupsColorSpace` in the header is 19 for sRGB (driver converts, `kChromaFloor`
+  applies) or 18 for sGray (ColorSync converted, nothing here can help).
 - Never advertise `black_1`. PAPPL (and some clients) then threshold with a
   clustered-dot screen, and Atkinson has nothing to spread. 8-bit sGray/sRGB
   only; we dither.
 - PJL `RESOLUTION` must match the bitmap dpi. A 300 dpi raster with
   `RESOLUTION = 600` prints at half size — that is the 100%-scale bug.
-- The 1.28×/1.18× `scale_coverage` gain in `sister_app.cpp`'s `rendpage` (600
-  dpi / HQ1200) compensates for Atkinson's isolated single-pixel dots getting
-  lost by this engine at higher dpi. AM45 deliberately gets no such gain
-  (`SISTERHL2030_HALFTONE_AM45` branch, gain fixed at 1.0) — its dots are
-  multi-pixel blobs by construction, so they are not expected to fail the
-  same way, but that is unverified on hardware. Don't "fix" AM45 by copying
-  Atkinson's numbers over; it needs its own measurement first.
+- Darkness is a **model**, not a table of per-mode multipliers. The old
+  1.28×/1.18× `scale_coverage` gains are gone. `DotTransfer` in
+  `src/encoder/halftone.h` says everything within `suppression_um` of a
+  toner/paper boundary develops toward whichever phase surrounds it — so
+  isolated black dots never develop and isolated white holes fill in, and
+  what lands on paper has *more contrast* than was asked for. How much of the
+  pattern sits in that band is set by its boundary length, which is what
+  makes the effect depend on resolution and on the screen. It enters as a
+  gain on the pattern's log-odds; `dot_transfer_lut()` inverts that into a
+  256-entry table applied before the dither, and one measured length covers
+  300, 600 and 1200×600.
+- The suppression length is **measured**, and measured the whole way: fitted
+  to one patch of a Normal-quality `test_fixtures/calibration.pdf` print, it
+  then reproduced the rest of the sheet — where the crush starts, which
+  highlight patches vanish, and all six colour ramps — with nothing else
+  adjusted. If prints come out wrong, re-measure it. Do not add a per-mode
+  fudge factor back, and do not reach for `density` to fix a *shape* problem:
+  `density` is the overall light/dark knob and nothing else.
+- **The two screens are calibrated separately and must stay that way.**
+  `kAtkinsonSuppressionUm`/`kAtkinsonEconomodeGain`/`kAtkinsonDensity` and
+  the `kAm45*` equivalents are independent sets
+  in `halftone.h`; `active_screen()` picks one at compile time. AM45 was
+  judged right on paper as it is, so its numbers make `dot_transfer_lut()`
+  short-circuit to an exact identity — a real calibration result, not a
+  placeholder. `test_encoder` asserts that identity on every grid and in both
+  ECONOMODE states, so editing the Atkinson numbers can never move an AM45
+  pixel. Don't merge the two sets back together, and don't "fix" AM45 by
+  copying Atkinson's numbers over.
 
 ## Source layout
 
@@ -181,6 +233,33 @@ Quality mapping lives in `requested_resolution()` in the filter and
 `write_page_header()` in `job.cc`: draft = 300 dpi + ECONOMODE ON, normal =
 600 dpi + ECONOMODE ON, high = `RAS1200MODE = TRUE` with `RESOLUTION = 600`
 and ECONOMODE OFF.
+
+## Calibrating darkness
+
+`test_fixtures/calibration.pdf` (regenerate with
+`python3 Scripts/make_calibration_pdf.py`) is the target for measuring the
+two constants the darkness model rests on. It is two vector A4 pages: step
+wedges at 5 % and at 1 % in the highlights and shadows, continuous K/R/G/B/
+C/M/Y ramps with a printed 5 % scale and white index lines every 10 %,
+colour swatches, a rules/type/converging-wedge detail block, and a form to
+write the answers on. Each sheet is stamped with the driver version and the
+constants it was printed with, so a stack of them stays readable.
+
+Colour is calibrated separately from tone by `kChromaFloor` and
+`kChromaKnee`. Both are scaled by saturation, so they cannot move a neutral
+and the grey calibration is safe from them by construction; they only do
+anything when the raster arrives as sRGB (see the PPD note under Gotchas).
+The knee is below 1 because a white-to-green ramp had to reach full-strength
+density by 8.5% of its length, which is a strong ask — saturation is all the
+floor knows, so pale tints of any hue are lifted just as far. Raise the knee
+toward 1 to give that back.
+
+The highlight wedge is the sensitive one: suppression costs the most where
+the dots are most isolated, so where the first patch becomes visible pins the
+suppression length far better than any midtone does. Read it as a pair with
+the shadow wedge — one end going light while the other crushes is the
+signature of a contrast error, not a darkness error, and only the first is
+the model's business.
 
 ## Checking output without printing
 

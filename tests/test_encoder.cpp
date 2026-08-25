@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -115,33 +117,7 @@ int main() {
     expect(device_gray_to_toner(255) == 0, "DeviceGray 255 is white");
     expect(device_k_to_toner(0) == 0, "DeviceK 0 is white");
     expect(device_k_to_toner(255) == 255, "DeviceK 255 is black");
-    expect(rgb_to_toner(255, 255, 0) < 80, "yellow is light, not solid black");
-    {
-      unsigned w = 4;
-      unsigned h = 4;
-      std::vector<uint8_t> block(16, 100);
-      sisterhl2030::box_downsample_2x(block, w, h);
-      expect(w == 2 && h == 2, "2x2 downsample halves both axes");
-      expect(block.size() == 4 && block[0] == 100, "2x2 box of 100 stays 100");
-    }
-    {
-      unsigned w = 2;
-      unsigned h = 2;
-      std::vector<uint8_t> block{10, 20, 30, 40};
-      sisterhl2030::nn_upsample_2x(block, w, h);
-      expect(w == 4 && h == 4, "nearest upsample doubles both axes");
-      expect(block.size() == 16 && block[0] == 10 && block[1] == 10 &&
-                 block[4] == 10 && block[5] == 10,
-             "2x2 of 10 expands to a 2x2 block of 10");
-      expect(block[2] == 20 && block[15] == 40, "upsample keeps other corners");
-    }
-    {
-      uint8_t v[2] = {100, 200};
-      sisterhl2030::scale_coverage(v, 2, 1.0f);
-      expect(v[0] == 100 && v[1] == 200, "gain 1 leaves toner unchanged");
-      sisterhl2030::scale_coverage(v, 2, 1.5f);
-      expect(v[0] == 150 && v[1] == 255, "gain >1 darkens and clamps");
-    }
+    expect(rgb_to_toner(255, 255, 0) < 100, "yellow is light, not solid black");
     {
       std::vector<uint8_t> t(64 * 48, 128);
       atkinson(t.data(), 64, 48);
@@ -159,12 +135,6 @@ int main() {
         if (v >= 128) ++black;
       }
       expect(black == 44, "streaming Atkinson matches full-buffer grey-90");
-    }
-    {
-      uint8_t row[4] = {255, 0, 255, 0};
-      uint8_t packed[1] = {0};
-      sisterhl2030::pack_toner_row_2x(row, 4, packed);
-      expect(packed[0] == 0xCC, "2x pack doubles bits (11001100)");
     }
     {
       using sisterhl2030::clustered_dot_45;
@@ -250,6 +220,169 @@ int main() {
         }
       }
       expect(periodic, "45° screen tiles losslessly with period 2*cell");
+    }
+    {
+      // The device grid the halftone runs on. HQ1200 is the interesting one:
+      // 1200 across the scan, still 600 down the page.
+      using sisterhl2030::device_grid;
+      expect(device_grid(300).dpi_x == 300 && device_grid(300).dpi_y == 300,
+             "draft halftones on a 300x300 grid");
+      expect(device_grid(600).dpi_x == 600 && device_grid(600).dpi_y == 600,
+             "normal halftones on a 600x600 grid");
+      expect(device_grid(1200).dpi_x == 1200 && device_grid(1200).dpi_y == 600,
+             "HQ1200 halftones on a 1200x600 grid");
+    }
+    {
+      using sisterhl2030::resample_to_grid;
+      unsigned w = 8;
+      unsigned h = 8;
+      std::vector<uint8_t> page(64, 120);
+      resample_to_grid(page, w, h, 600, sisterhl2030::device_grid(1200));
+      expect(w == 16 && h == 8 && page.size() == 128,
+             "600 dpi raster widens to the 1200x600 grid, height untouched");
+      expect(page[0] == 120 && page[1] == 120,
+             "widening replicates, it does not interpolate");
+
+      w = 8;
+      h = 8;
+      page.assign(64, 120);
+      resample_to_grid(page, w, h, 600, sisterhl2030::device_grid(300));
+      expect(w == 4 && h == 4 && page.size() == 16,
+             "600 dpi raster box-filters down to the 300 dpi grid");
+
+      w = 8;
+      h = 8;
+      page.assign(64, 120);
+      resample_to_grid(page, w, h, 600, sisterhl2030::device_grid(600));
+      expect(w == 8 && h == 8, "a raster already on the grid is left alone");
+    }
+    {
+      // The darkness model. What matters is not the exact numbers -- those
+      // move with kAtkinsonSuppressionUm -- but that the shape is right:
+      // white, mid and solid are fixed points, the minority phase is pushed
+      // toward the majority one in BOTH directions, a finer grid suffers
+      // more than a coarse one, and a clustered screen with its far shorter
+      // boundary suffers least.
+      using sisterhl2030::DotTransfer;
+      using sisterhl2030::dot_transfer_lut;
+      using sisterhl2030::pixel_um;
+      using sisterhl2030::contrast_gain;
+      using sisterhl2030::printed_coverage;
+
+      auto grid_transfer = [](int dpi_x, int dpi_y, bool clustered) {
+        DotTransfer dt;
+        dt.pixel_w_um = pixel_um(dpi_x);
+        dt.pixel_h_um = pixel_um(dpi_y);
+        dt.suppression_um = sisterhl2030::kAtkinsonSuppressionUm;
+        dt.clustered = clustered;
+        return dt;
+      };
+      const DotTransfer at300 = grid_transfer(300, 300, false);
+      const DotTransfer at600 = grid_transfer(600, 600, false);
+      const DotTransfer am600 = grid_transfer(600, 600, true);
+
+      expect(printed_coverage(at600, 0.0f) == 0.0f,
+             "paper prints as paper however hard the engine suppresses");
+      expect(printed_coverage(at600, 1.0f) == 1.0f,
+             "and a solid has no minority phase to suppress");
+      expect(std::abs(printed_coverage(at600, 0.5f) - 0.5f) < 0.01f,
+             "mid-tone is the fixed point the suppression turns around");
+      expect(printed_coverage(at600, 0.25f) < 0.25f,
+             "isolated black dots do not develop, so highlights lose ink");
+      expect(printed_coverage(at600, 0.75f) > 0.75f,
+             "isolated white holes fill in, so shadows gain it");
+      expect(printed_coverage(at600, 0.25f) < printed_coverage(at300, 0.25f),
+             "a finer grid is more boundary, so it suffers more");
+      expect(printed_coverage(am600, 0.25f) > printed_coverage(at600, 0.25f),
+             "one clustered blob suffers less than the same area scattered");
+      expect(contrast_gain(at600) > contrast_gain(at300),
+             "and that shows up directly as a higher contrast gain");
+
+      const std::vector<uint8_t> lut600 = dot_transfer_lut(at600);
+      const std::vector<uint8_t> lut300 = dot_transfer_lut(at300);
+      expect(lut600.size() == 256, "the transfer table covers every level");
+      expect(lut600[0] == 0 && lut600[255] == 255,
+             "white and solid are asked for unchanged");
+      expect(dot_transfer_lut(am600)[255] == 255 && dot_transfer_lut(am600)[0] == 0,
+             "and the same holds for the clustered screen");
+      // Mid-tone is the fixed point, so the interesting asymmetry is at the
+      // ends: ask for more in the highlights, less in the shadows.
+      expect(lut600[64] > 64, "reaching 25 %% on paper asks for more than 25 %%");
+      expect(lut600[191] < 191, "and reaching 75 %% asks for less than 75 %%");
+      expect(lut600[64] > lut300[64],
+             "the finer grid has to ask for more to land in the same place");
+      bool monotone = true;
+      for (int i = 1; i < 256; ++i) {
+        if (lut600[static_cast<size_t>(i)] < lut600[static_cast<size_t>(i - 1)]) {
+          monotone = false;
+        }
+      }
+      expect(monotone, "the transfer table never doubles back");
+
+      // The screen's own flat-field response, which the table also inverts.
+      using sisterhl2030::screen_response;
+      const std::vector<uint8_t>& fm = screen_response(false, 4);
+      const std::vector<uint8_t>& am = screen_response(true, 4);
+      expect(fm.size() == 256 && am.size() == 256, "the screen response covers every level");
+      expect(fm[0] == 0 && fm[255] == 255 && am[0] == 0 && am[255] == 255,
+             "both screens leave paper and solid alone");
+      int am_worst = 0;
+      for (int i = 0; i < 256; ++i) {
+        am_worst = std::max(am_worst,
+                            std::abs(static_cast<int>(am[static_cast<size_t>(i)]) - i));
+      }
+      // cell=4 gives 32 gray levels, so ~8/255 of quantisation is the floor.
+      expect(am_worst <= 10, "an ordered screen blackens what it was asked for");
+      expect(fm[26] == 0, "Atkinson drops a flat 10 %% field entirely");
+      expect(fm[230] == 255, "Atkinson takes a flat 90 %% field to solid");
+      expect(fm[160] > 160, "Atkinson gains contrast above mid-grey");
+
+      // Round trip over the range the screen can actually reproduce -- the
+      // clipped ends are a property of Atkinson, not something to invert away.
+      int worst = 0;
+      for (int target = 30; target <= 200; target += 5) {
+        const float got = sisterhl2030::paper_coverage(
+            at600, lut600[static_cast<size_t>(target)] / 255.0f);
+        const int err = std::abs(static_cast<int>(std::lround(got * 255.0f)) -
+                                 target);
+        worst = std::max(worst, err);
+      }
+      expect(worst <= 4, "inverting the model reproduces the requested tone");
+
+      // The two screens are calibrated independently: AM45 was judged right
+      // on paper as it is, so its table must be an exact identity on every
+      // grid and in both ECONOMODE states. Nothing anyone does to the
+      // Atkinson constants can move a single AM45 pixel, and this is the
+      // assertion that keeps it that way.
+      using sisterhl2030::engine_transfer;
+      bool am45_identity = true;
+      for (int res : {300, 600, 1200}) {
+        for (bool eco : {false, true}) {
+          const std::vector<uint8_t> table = dot_transfer_lut(
+              engine_transfer(sisterhl2030::kAm45Screen,
+                              sisterhl2030::device_grid(res), eco));
+          for (int i = 0; i < 256; ++i) {
+            if (table[static_cast<size_t>(i)] != i) {
+              am45_identity = false;
+            }
+          }
+        }
+      }
+      expect(am45_identity, "AM45 asks for exactly what it was given");
+      expect(dot_transfer_lut(engine_transfer(sisterhl2030::kAtkinsonScreen,
+                                              sisterhl2030::device_grid(600),
+                                              true))[128] != 128,
+             "and Atkinson does not, so the two really are separate");
+      expect(sisterhl2030::active_screen().name != nullptr,
+             "the build knows which screen it prints with");
+
+      // ECONOMODE is a flat toner-layer factor, so it can never reach solid.
+      DotTransfer eco = at600;
+      eco.economode_gain = sisterhl2030::kAtkinsonEconomodeGain;
+      expect(printed_coverage(eco, 1.0f) < 1.0f,
+             "ECONOMODE cannot lay down a full solid");
+      expect(dot_transfer_lut(eco)[128] > lut600[128],
+             "ECONOMODE has to be asked for more to match");
     }
   }
 
@@ -424,7 +557,32 @@ int main() {
   // Saturated colour must not slam to near-solid coverage.
   expect(sisterhl2030::rgb_to_toner(255, 0, 0) < 128,
          "pure red stays below half coverage");
-  expect(sisterhl2030::rgb_to_toner(255, 255, 0) < 40, "yellow stays light");
+  // ... but it must not vanish into the paper either. Luminance alone puts
+  // yellow at 3 % coverage, which prints as nothing; the chroma floor is what
+  // keeps a saturated colour distinguishable from bare paper.
+  const int floor8 =
+      static_cast<int>(std::lround(sisterhl2030::kChromaFloor * 255.0f));
+  for (auto c : {std::array<uint8_t, 3>{255, 255, 0},
+                 std::array<uint8_t, 3>{0, 255, 255},
+                 std::array<uint8_t, 3>{0, 255, 0}}) {
+    expect(sisterhl2030::rgb_to_toner(c[0], c[1], c[2]) >= floor8 - 1,
+           "a fully saturated colour reaches the chroma floor");
+  }
+  expect(sisterhl2030::rgb_to_toner(255, 255, 0) < 100,
+         "yellow is lifted off the paper, not turned into a dark grey");
+  // The knee is calibrated, not chosen: on the white-to-green ramp the density
+  // that used to need full strength was wanted by 8.5 % of the way along, and
+  // 8.5 % saturation is (233,255,233). Pin it -- this number came off paper.
+  {
+    const uint8_t pale_green = sisterhl2030::rgb_to_toner(233, 255, 233);
+    expect(pale_green >= 30 && pale_green <= 40,
+           "8.5 %% saturation carries the coverage the print asked for");
+  }
+  // And pin what that costs, so it cannot surprise anyone later: saturation is
+  // all the floor knows, so a warm near-white gets lifted just as far as a
+  // pale green does. Raise kChromaKnee toward 1 to give that back.
+  expect(sisterhl2030::rgb_to_toner(255, 250, 240) > 20,
+         "the knee cannot tell a pale tint from a pale colour");
   expect(sisterhl2030::rgb_to_toner(0, 0, 0) == 255, "black is full toner");
   expect(sisterhl2030::rgb_to_toner(255, 255, 255) == 0, "white is no toner");
 

@@ -52,8 +52,10 @@ python3 "$SCRIPT_DIR/_socket_sink.py" "$SINK_PORT" "$WORK/job.prn" >"$WORK/sink.
 SINK_PID=$!
 sleep 1
 
-# A private state file: never disturb a real installed printer.
-PAPPL_STATE="$WORK/state.conf" "$APP" server \
+# A private state file: never disturb a real installed printer. PAPPL derives
+# the path from $HOME (mainloop-subcommands.c), so overriding HOME is what
+# actually isolates it -- there is no PAPPL_STATE variable.
+HOME="$WORK" "$APP" server \
   -o server-port="$IPP_PORT" \
   -o spool-directory="$WORK/spool" \
   -o log-file="$WORK/server.log" \

@@ -46,8 +46,9 @@ your mind; it just replaces the one already there.
 
 * **Newspaper style** — `InstallSisterDrivers(NewspaperStyle).pkg`. Dots are
   grouped into a crisp, evenly-spaced grid, the way a halftone photo looks
-  in a printed newspaper. Sharper on line art, logos and small text; the dot
-  pattern is more visible on smooth photos.
+  in a printed newspaper. It is better for people that only print office
+  documents. The graphical resolution is noticeably lower, but on this
+  cheap printer it produces clearer patterns for color graphics.
 * **Pencil style** — `InstallSisterDrivers(PencilStyle).pkg`. Dots are
   scattered individually (a technique called Atkinson dithering, the one
   classic Mac graphics software used), giving a soft, sketchy texture like
@@ -116,7 +117,8 @@ leaves nothing behind.
 * **Toner and drum levels**: shown right in System Settings' Supply Levels
   panel, same as a modern printer.
 * **Three quality modes**: Draft (300 dpi), Normal (600 dpi), and Fine
-  (1200 dpi).
+  (1200×600 dpi), each halftoned at its own resolution rather than rescaled
+  from another one.
 
 ## How it works, briefly
 

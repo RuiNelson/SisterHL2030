@@ -40,12 +40,51 @@ void clustered_dot_45(uint8_t* toner, unsigned width, unsigned height,
 // Pack one 0/255 toner row to 1-bit MSB-first (1 = black).
 void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed);
 
-// Same packing, each pixel emitted twice (HQ1200 nearest-neighbour of 1-bit).
-// `packed` must hold (2*width+7)/8 bytes.
-void pack_toner_row_2x(const uint8_t* toner_row, unsigned width, uint8_t* packed);
-
-// sRGB 8-bit RGB → toner 0..255 (perceptual Rec.709 luma, highlight-preserving laser curve).
+// sRGB 8-bit RGB → toner 0..255.
+//
+// Rec.709 luminance in linear light, then the laser curve -- and then a floor
+// that keeps saturated colour legible. The luminance part is the standard
+// colorimetric answer and it is exactly right for "how bright is this?":
+// pure yellow really does reflect 93 % as much light as white. It is the
+// WRONG question for a printer with one black toner, because it maps yellow,
+// cyan and light greens onto bare paper and a chart that was readable in
+// colour comes out blank.
+//
+// So a fully saturated colour is not allowed to print lighter than
+// `kChromaFloor`, and the floor scales with saturation, which means neutrals
+// are untouched: greys, text and the neutral parts of photographs come out
+// bit for bit as they did before, and only actual colour is lifted. A
+// deliberate departure from colorimetry, in the direction of keeping colours
+// off the paper -- which is what a mono print is for.
+//
+// Reached only when the raster arrives as sRGB. That depends on the queue's
+// PPD carrying a `*ColorModel RGB` entry, which in turn depends on
+// `ppm_color` at the time the queue was generated -- see sister_app.cpp.
+// Confirm with:
+//   cupsfilter -p /etc/cups/ppd/<queue>.ppd -m application/vnd.cups-raster \
+//       file.pdf | ...   (cupsColorSpace 19 = sRGB, 18 = ColorSync already
+//                         reduced it to grey and this function never runs)
 uint8_t rgb_to_toner(uint8_t r, uint8_t g, uint8_t b);
+
+// Minimum toner coverage for a fully saturated colour, 0..1, reached as
+// `kChromaFloor * saturation^kChromaKnee`. Setting the floor to 0 restores
+// pure colorimetric luminance.
+//
+// Both are measured from Normal prints. The floor: of the six primary ramps,
+// red (33 %), blue (53 %) and magenta (29 %) were judged right while green
+// (15 %), cyan (11 %) and yellow (3 %) were called too light, so it sits at
+// the bottom of the range that was accepted -- lifting exactly the three that
+// failed and leaving the three that passed alone.
+//
+// The knee: on the white-to-green ramp the density that used to appear only
+// at full strength was wanted by about 8.5 % of the way along. An exponent
+// below 1 bends the curve up steeply out of white to put it there. That is a
+// strong choice and it is not free -- at 2 % saturation a barely-tinted
+// near-white already carries 9 % coverage, so pale tints in photographs go
+// greyer than luminance would make them. Raise the knee toward 1 to soften
+// it (1.0 makes the floor simply proportional to saturation).
+constexpr float kChromaFloor = 0.29f;
+constexpr float kChromaKnee = 0.3042f;
 
 // DeviceGray (0 = black, 255 = white) → toner.
 uint8_t device_gray_to_toner(uint8_t gray);
@@ -53,19 +92,228 @@ uint8_t device_gray_to_toner(uint8_t gray);
 // DeviceK (0 = white, 255 = black) → toner.
 uint8_t device_k_to_toner(uint8_t k);
 
-// Halve width and height with a 2×2 box filter (draft 600→300). No-op if
-// either dimension is < 2. `toner` is resized to the new width*height.
-void box_downsample_2x(std::vector<uint8_t>& toner, unsigned& width,
-                       unsigned& height);
+// Double width by pixel replication: the 600 dpi raster resampled onto
+// HQ1200's 1200x600 addressable grid, so the halftone runs at the device's
+// own pitch instead of being computed at 600 and stretched afterwards.
+// Replication and not interpolation on purpose -- there is no extra detail
+// in the source to recover, and interpolating would put a half-pixel ramp on
+// every glyph edge for nothing. `resample_to_grid` is the usual way in.
+void nn_upsample_2x_x(std::vector<uint8_t>& toner, unsigned& width,
+                      unsigned height);
 
-// Double width and height by nearest-neighbour (Fine 600→1200). HQ1200
-// rasters are twice the 600 dpi paperinf size; a 600 dpi bitmap with
-// RAS1200MODE prints at half size.
-void nn_upsample_2x(std::vector<uint8_t>& toner, unsigned& width,
-                    unsigned& height);
+// ---------------------------------------------------------------------------
+// Engine dot transfer
+// ---------------------------------------------------------------------------
+//
+// The addressable grid the halftone is computed on. HQ1200's bitmap is twice
+// the 600 dpi page in BOTH axes (docs/protocol.md, `paperinf`), but the engine
+// only resolves 1200 along the scan line -- Brother's own PPD calls the mode
+// `1200x600dpi`. So the halftone is computed at 1200x600 and each dithered row
+// is emitted twice to fill the doubled bitmap.
+struct DeviceGrid {
+  int dpi_x = 600;
+  int dpi_y = 600;
+};
 
-// Multiply each toner sample by `gain` (1 = unchanged, >1 darker, <1 lighter).
-void scale_coverage(uint8_t* toner, size_t n, float gain);
+// `pjl_resolution` is PageParams::resolution: 300, 600, or 1200 (RAS1200MODE).
+DeviceGrid device_grid(int pjl_resolution);
+
+// Resample a square `src_dpi` contone page onto `grid`, in place. Box-average
+// going down, pixel-replicate going up, each axis independently. Call this
+// BEFORE the halftone so the dither runs at the pitch the engine actually
+// addresses -- halftoning first and rescaling the 1-bit result afterwards
+// throws away exactly the precision the finer grid was for.
+void resample_to_grid(std::vector<uint8_t>& toner, unsigned& width,
+                      unsigned& height, int src_dpi, const DeviceGrid& grid);
+
+// Physical size of one device pixel, in micrometres.
+inline float pixel_um(int dpi) { return 25400.0f / static_cast<float>(dpi); }
+
+// How this engine turns a requested area coverage into toner on paper.
+//
+// Electrophotography does not reproduce the pattern it is handed. The latent
+// image is the laser spot convolved with the pattern and then developed
+// against a threshold, and the practical consequence for a halftone is that
+// EVERYTHING WITHIN `suppression_um` OF A TONER/PAPER BOUNDARY RESOLVES
+// TOWARD WHICHEVER PHASE SURROUNDS IT. An isolated black dot is all boundary,
+// so it never reaches threshold and does not develop -- highlights die. An
+// isolated white hole is all boundary too, so its neighbours' toner closes it
+// -- shadows fill. Both push the same way: what lands on paper has MORE
+// contrast than what was asked for.
+//
+// That is measured, not assumed. Printed at Normal on the HL-2030, an 11 %
+// patch that laid 23 % of its pixels down came back looking like 5 %, while
+// an 80 % patch that laid 82 % down came back solid. A single suppression
+// length reproduces both, and also -- with nothing further fitted -- the
+// crush point, the invisible 5 % patch, the 90 %/100 % patches being
+// indistinguishable, and all six colour ramps.
+//
+// How much of the pattern is inside that band is set by its BOUNDARY LENGTH,
+// which is why the effect depends on resolution and on the screen: a
+// dispersed 600 dpi screen is nearly all boundary, a 300 dpi one much less,
+// and a clustered AM dot has the least of all. So one length predicts every
+// mode instead of each being measured separately. It enters as a gain on the
+// pattern's log-odds -- the standard shape for a threshold process, monotone
+// for any gain, and fixed at 0, 0.5 and 1.
+//
+// `economode_gain` is separate and not geometric: ECONOMODE thins the toner
+// layer rather than moving any boundary, so it scales the whole result.
+//
+// `density` is not the engine at all -- it is intent. It is a gamma on the
+// requested coverage, and the one knob for "the page should be darker or
+// lighter overall" once the shape above is right. Keep it out of the physics.
+//
+// The numbers live per screen in ScreenCalibration below, not here -- build
+// one of these with `engine_transfer()`.
+struct DotTransfer {
+  float pixel_w_um = 42.333f;
+  float pixel_h_um = 42.333f;
+  float suppression_um = 0.0f;
+  float economode_gain = 1.0f;
+  float density = 1.0f;  // >1 darker, <1 lighter; 1 = reproduce what was asked
+  bool clustered = false;  // AM45 rather than a dispersed (FM) screen
+  unsigned cell = 4;       // AM45 dot radius in device pixels
+  // Whether to invert the screen's own flat-field response as well as the
+  // engine's erosion. Worth doing for a screen that clips its own tone scale
+  // (Atkinson), pointless for one that is already linear (AM45).
+  bool linearize = false;
+};
+
+// Boundary length of the halftone pattern per unit area, in 1/um, when the
+// pattern covers fraction `c` (0..1) of the paper. This is the whole
+// geometric content of the model.
+float boundary_density(const DotTransfer& dt, float c);
+
+// Flat-field response of the SCREEN itself, measured rather than assumed:
+// `[i]` is the fraction of pixels (0..255) that come out black when a field
+// of constant value `i` is dithered. An ordered screen is very nearly the
+// identity here -- it blackens exactly as many pixels per cell as asked. A
+// dispersed error-diffusion screen is not: Atkinson throws away two eighths
+// of its error, so a flat field below about 13 % produces no dots at all and
+// one above about 87 % goes fully solid, with roughly 1.45x contrast in
+// between. That is Atkinson's signature crispness, and also a real loss of
+// highlight and shadow -- folding it into the model means the requested tone
+// survives while the scattered-dot texture stays exactly as it was.
+//
+// Computed once per process by actually dithering flat patches, so it can
+// never drift away from what `atkinson()` and `clustered_dot_45()` do.
+const std::vector<uint8_t>& screen_response(bool clustered, unsigned cell);
+
+// The engine's contrast gain: 1 means it reproduces patterns faithfully,
+// higher means it suppresses the minority phase harder. Derived from the
+// suppression length and the pattern's boundary density, so it falls out of
+// the grid and the screen rather than being a per-mode number.
+float contrast_gain(const DotTransfer& dt);
+
+// Forward model of the ENGINE alone: the coverage of a pattern handed to the
+// drum in, the coverage that develops out.
+float printed_coverage(const DotTransfer& dt, float pattern_coverage);
+
+// The whole chain: nominal coverage in, coverage on paper out. This is
+// `printed_coverage` composed with `screen_response`.
+float paper_coverage(const DotTransfer& dt, float nominal);
+
+// Inverse of `paper_coverage`, tabulated: `lut[i]` is the nominal coverage
+// to ask the dither for when `i/255` is the coverage wanted on paper. Built by
+// sampling the forward model and inverting it, under a running maximum so a
+// non-monotonic forward curve (possible when the erosion approaches the pixel
+// pitch, e.g. a dispersed screen at 1200 dpi) still yields a usable table.
+//
+// Both ends are anchored rather than inverted: 0 stays 0 and 255 stays 255.
+// A dispersed screen saturates well before 255, so a pure inversion would map
+// full black to whatever first went solid on a flat field -- the same result
+// on a flat field, but on text and edges it would hand error diffusion a
+// value to dither instead of a solid.
+std::vector<uint8_t> dot_transfer_lut(const DotTransfer& dt);
+
+// Apply such a table to a toner buffer, in place.
+void apply_transfer(uint8_t* toner, size_t n, const std::vector<uint8_t>& lut);
+
+// ---------------------------------------------------------------------------
+// Per-screen calibration
+// ---------------------------------------------------------------------------
+//
+// Two independent sets of numbers, deliberately. The screens lay ink down by
+// different geometry and were calibrated by different means, so re-measuring
+// one must never move the other: editing the Atkinson numbers below cannot
+// change a single bit of AM45 output, and the reverse.
+
+// Atkinson (dispersed / FM), the "Pencil style" build.
+//
+// `kAtkinsonSuppressionUm` is MEASURED, from a Normal-quality print of
+// test_fixtures/calibration.pdf on the HL-2030: the 11 % patch laid 23 % of
+// its pixels and came back looking like 5 %, which fixes the gain at 2.38 and
+// the length at 58 um. Fitted to that one patch, it then reproduced the rest
+// of the sheet -- the crush starting at 80 %, 90 % and 100 % being
+// indistinguishable, the 5 % patch invisible, and all six colour ramps --
+// with nothing else adjusted.
+//
+// `kAtkinsonEconomodeGain` is still inferred rather than measured (from the
+// ratio of the two old hand-tuned constants, 1.28 with ECONOMODE on against
+// 1.18 with it off). Printing the sheet once at Normal and once at High pins
+// it properly.
+//
+// To re-measure: print the sheet, read the highlight wedge. Adjust these
+// numbers, not the modes.
+constexpr float kAtkinsonSuppressionUm = 58.4f;
+constexpr float kAtkinsonEconomodeGain = 0.92f;
+// Overall darkness, once the shape is right: >1 darker, <1 lighter. Starts
+// neutral, so the page reproduces the coverage it was asked for. This is the
+// knob for "too light" / "too dark" -- nothing else.
+constexpr float kAtkinsonDensity = 1.0f;
+// Atkinson clips its own tone scale hard at both ends (see `screen_response`),
+// so its response is worth inverting along with the engine's.
+constexpr bool kAtkinsonLinearize = true;
+
+// AM45 (clustered dot at 45 degrees), the "Newspaper style" build.
+//
+// Calibrated the only way that really counts, by looking at prints: this
+// screen was judged right as it is, so it asks for no correction at all and
+// its transfer table is the identity. That is a legitimate calibration
+// result, not a placeholder -- and it is consistent with the model, since a
+// clustered blob has far less boundary per unit area than the same coverage
+// scattered as single pixels, and an ordered screen reproduces the coverage
+// it was asked for almost exactly.
+//
+// If AM45 ever does need correcting, measure it with the same sheet and set
+// these; nothing about Atkinson is involved.
+constexpr float kAm45SuppressionUm = 0.0f;
+constexpr float kAm45EconomodeGain = 1.0f;
+constexpr float kAm45Density = 1.0f;
+constexpr bool kAm45Linearize = false;
+constexpr unsigned kAm45Cell = 4;  // also the dot radius passed to the screen
+
+struct ScreenCalibration {
+  bool clustered;
+  unsigned cell;
+  float suppression_um;
+  float economode_gain;
+  float density;
+  bool linearize;
+  const char* name;
+};
+
+constexpr ScreenCalibration kAtkinsonScreen = {
+    false, 0, kAtkinsonSuppressionUm, kAtkinsonEconomodeGain, kAtkinsonDensity,
+    kAtkinsonLinearize, "Atkinson"};
+constexpr ScreenCalibration kAm45Screen = {
+    true, kAm45Cell, kAm45SuppressionUm, kAm45EconomodeGain, kAm45Density,
+    kAm45Linearize, "AM45"};
+
+// Whichever screen this build prints with, chosen by SISTER_HALFTONE_SCREEN
+// at configure time. Constexpr, so the branch on `.clustered` at a call site
+// folds away and only one screen is actually reachable in the binary.
+constexpr ScreenCalibration active_screen() {
+#if defined(SISTERHL2030_HALFTONE_AM45)
+  return kAm45Screen;
+#else
+  return kAtkinsonScreen;
+#endif
+}
+
+// Fill in a DotTransfer for one screen on one device grid.
+DotTransfer engine_transfer(const ScreenCalibration& screen,
+                            const DeviceGrid& grid, bool economode);
 
 }  // namespace sisterhl2030
 

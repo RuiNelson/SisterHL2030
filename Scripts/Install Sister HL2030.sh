@@ -94,11 +94,14 @@ echo
 echo "${c_bold}    Choosing a halftone screen…${c_reset}"
 echo
 echo "SisterHL2030 can dither photos and shading two ways:"
-echo "  ${c_bold}FM${c_reset}  Atkinson error diffusion (scattered dots). The proven"
-echo "        default this driver has shipped with."
-echo "  ${c_bold}AM${c_reset}  45° clustered-dot ordered dither. Experimental: it has no"
-echo "        dot-gain compensation yet, so it currently prints lighter than"
-echo "        FM, and it has not been verified on paper."
+echo "  ${c_bold}FM${c_reset}  \"Pencil style\" — Atkinson error diffusion, dots scattered"
+echo "        individually. Soft and sketchy. The shipping default, and the"
+echo "        one whose darkness is calibrated against printed test sheets."
+echo "  ${c_bold}AM${c_reset}  \"Newspaper style\" — 45° clustered-dot ordered dither, dots"
+echo "        grouped into an even grid. Crisper on line art and small text,"
+echo "        with a more visible dot pattern on photos. Calibrated by eye on"
+echo "        paper as needing no darkness correction, so it is left exactly"
+echo "        as the screen renders it."
 echo
 halftone_cmake=""
 halftone_label=""
@@ -106,8 +109,8 @@ while [[ -z "$halftone_cmake" ]]; do
   read -r -p "Install which one? [FM/am] (default FM): " halftone_answer || true
   halftone_answer="$(printf '%s' "$halftone_answer" | tr '[:lower:]' '[:upper:]')"
   case "$halftone_answer" in
-    ""|FM) halftone_cmake="ATKINSON"; halftone_label="FM (Atkinson)" ;;
-    AM)    halftone_cmake="AM45";     halftone_label="AM (45° clustered-dot, experimental)" ;;
+    ""|FM) halftone_cmake="ATKINSON"; halftone_label="FM (Atkinson, Pencil style)" ;;
+    AM)    halftone_cmake="AM45";     halftone_label="AM (45° clustered-dot, Newspaper style)" ;;
     *)     echo "Please type FM or AM." ;;
   esac
 done

@@ -92,10 +92,24 @@ From `paperinf` (width × height in pixels at 600 dpi):
 | Com-10 | 2475 | 5700 |
 | Monarch | 2325 | 4500 |
 
-At 300 dpi, dimensions are halved; at 1200 they are doubled. Fine quality
-dithers at 600 dpi and nearest-neighbour upsamples the 1-bit page to that
-doubled grid — Atkinson on the 1200 dpi buffer does not finish in time,
-and `RAS1200MODE` with a 600 dpi bitmap prints at half size. The Linux PPD
+At 300 dpi, dimensions are halved; at 1200 they are doubled — and
+`RAS1200MODE` with a 600 dpi bitmap prints at half size, so the doubled
+bitmap is not optional.
+
+The bitmap doubling both ways does not mean the engine resolves 1200 both
+ways: Brother's own PPD calls the mode `1200x600dpi`, the laser being
+modulated twice per 600 dpi pixel along the scan while the drum still
+advances at 600. Sister therefore halftones Fine quality on a **1200×600**
+grid and emits each dithered row twice. The horizontal half of the mode is
+real halftone detail; the vertical half is replication the format demands.
+
+(Earlier releases dithered at 600×600 and pixel-doubled the 1-bit result,
+on the belief that Atkinson could not cover a 1200 dpi page in time. That
+was never measured and is not true: serpentine Atkinson over a 1200×600 A4
+page — 70 million samples — takes about 155 ms on Apple Silicon, and 291 ms
+over a full 1200×1200 one.)
+
+The Linux PPD
 declares 18×12 pt unprintable margins. Sister advertises **0.01 mm**
 hardware margins. Zero made Apple's AirPrint path label sizes as
 `A4.Borderless` and the print dialog then Scale-to-Fits at ~96%. The laser

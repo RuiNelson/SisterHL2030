@@ -97,6 +97,74 @@ def decode_stats(prn):
     return out, mixed, width, rows
 
 
+def decode_bitmap(prn, pbm):
+    """Decode a job back to its rows of bits, as lists of 0/1 per pixel."""
+    subprocess.check_output(
+        [sys.executable, str(DECODE), str(prn), str(pbm)], text=True
+    )
+    data = pbm.read_bytes()
+    # P4 header: magic, width, height, then packed rows.
+    fields = []
+    pos = 2
+    while len(fields) < 2:
+        while pos < len(data) and data[pos : pos + 1].isspace():
+            pos += 1
+        if data[pos : pos + 1] == b"#":
+            while data[pos : pos + 1] not in (b"\n", b""):
+                pos += 1
+            continue
+        start = pos
+        while pos < len(data) and not data[pos : pos + 1].isspace():
+            pos += 1
+        fields.append(int(data[start:pos]))
+    pos += 1
+    width, height = fields
+    stride = (width + 7) // 8
+    return width, height, data[pos:], stride
+
+
+def check_hq1200_grid(job, work):
+    """HQ1200 must be dithered at 1200x600, not at 600 and pixel-doubled.
+
+    Two things follow from that and from nothing else: every row appears
+    exactly twice (the vertical half is replication the bitmap format
+    demands), and adjacent column pairs are NOT all identical (the
+    horizontal half is real 1200 dpi halftone detail, which is precisely
+    what pixel-doubling a 600 dpi dither could never produce).
+    """
+    failures = 0
+    width, height, bits, stride = decode_bitmap(job, work / "high.pbm")
+    rows = [bits[i * stride : (i + 1) * stride] for i in range(height)]
+    band = range(height // 3, height // 3 + 200, 2)
+    if any(rows[y] != rows[y + 1] for y in band):
+        print("FAIL: high: rows are not emitted in identical pairs; the "
+              "dither did not run on the 1200x600 grid", file=sys.stderr)
+        failures += 1
+    if all(rows[y] == rows[y + 2] for y in band):
+        print("FAIL: high: every other row is identical too, so the page "
+              "carries no vertical detail at all", file=sys.stderr)
+        failures += 1
+    # Column pairs: pixel-doubling a 600 dpi dither makes bit 2k == bit 2k+1
+    # for every k. Real 1200x600 halftoning breaks that on most rows.
+    split_pairs = 0
+    for y in band:
+        row = rows[y]
+        for byte in row[stride // 4 : stride // 2]:
+            for shift in (6, 4, 2, 0):
+                pair = (byte >> shift) & 0b11
+                if pair in (0b01, 0b10):
+                    split_pairs += 1
+    if split_pairs == 0:
+        print("FAIL: high: no split column pair anywhere; the 1-bit page was "
+              "pixel-doubled from 600 dpi rather than halftoned at 1200",
+              file=sys.stderr)
+        failures += 1
+    else:
+        print(f"ok high: {split_pairs} split column pairs (real 1200 dpi "
+              f"halftone detail), rows in exact pairs")
+    return failures
+
+
 def main():
     failures = 0
     if not APP.is_file():
@@ -264,6 +332,9 @@ def main():
                     file=sys.stderr,
                 )
                 failures += 1
+        high_job = work / "high.prn"
+        if high_job.is_file():
+            failures += check_hq1200_grid(high_job, work)
     finally:
         stop()
 
