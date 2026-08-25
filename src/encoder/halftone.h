@@ -171,6 +171,13 @@ struct DotTransfer {
   float suppression_um = 0.0f;
   float economode_gain = 1.0f;
   float density = 1.0f;  // >1 darker, <1 lighter; 1 = reproduce what was asked
+  // Ink limit: the transfer table never asks the screen for more than this
+  // fraction of full black, however dark the page requests. 1.0 (the
+  // default) leaves solid black solid; below that, even a nominal 255
+  // dithers at the capped level instead of printing flat. Unlike
+  // `economode_gain`, which scales the whole tone curve, this only clips
+  // the top of it.
+  float max_toner = 1.0f;
   bool clustered = false;  // AM45 rather than a dispersed (FM) screen
   unsigned cell = 4;       // AM45 dot radius in device pixels
   // Whether to invert the screen's own flat-field response as well as the
@@ -223,7 +230,10 @@ float paper_coverage(const DotTransfer& dt, float nominal);
 // A dispersed screen saturates well before 255, so a pure inversion would map
 // full black to whatever first went solid on a flat field -- the same result
 // on a flat field, but on text and edges it would hand error diffusion a
-// value to dither instead of a solid.
+// value to dither instead of a solid. `max_toner` below 1 overrides that
+// anchor on purpose: it caps the whole table, 255 included, at that fraction
+// of black so the darkest the screen ever asks for is the ink limit rather
+// than a flat solid.
 std::vector<uint8_t> dot_transfer_lut(const DotTransfer& dt);
 
 // Apply such a table to a toner buffer, in place.
@@ -264,6 +274,13 @@ constexpr float kAtkinsonDensity = 1.0f;
 // Atkinson clips its own tone scale hard at both ends (see `screen_response`),
 // so its response is worth inverting along with the engine's.
 constexpr bool kAtkinsonLinearize = true;
+// Ink limit: Atkinson was printing darker than it needed to, so cap how much
+// toner it is ever allowed to put down, independent of the darkness model
+// above. Draft and Normal (ECONOMODE on) cap at 80 %, Fine/Best (ECONOMODE
+// off) at 90 % -- both modes still reach a clearly dark black, just short of
+// a flat solid.
+constexpr float kAtkinsonMaxTonerEconomode = 0.80f;
+constexpr float kAtkinsonMaxTonerFull = 0.90f;
 
 // AM45 (clustered dot at 45 degrees), the "Newspaper style" build.
 //
@@ -282,6 +299,9 @@ constexpr float kAm45EconomodeGain = 1.0f;
 constexpr float kAm45Density = 1.0f;
 constexpr bool kAm45Linearize = false;
 constexpr unsigned kAm45Cell = 4;  // also the dot radius passed to the screen
+// AM45 was judged right on paper as it prints today -- no ink cap.
+constexpr float kAm45MaxTonerEconomode = 1.0f;
+constexpr float kAm45MaxTonerFull = 1.0f;
 
 struct ScreenCalibration {
   bool clustered;
@@ -290,15 +310,33 @@ struct ScreenCalibration {
   float economode_gain;
   float density;
   bool linearize;
+  // Ink limit (fraction of full black), separately for ECONOMODE on and off
+  // -- see `DotTransfer::max_toner`.
+  float max_toner_economode;
+  float max_toner_full;
   const char* name;
 };
 
 constexpr ScreenCalibration kAtkinsonScreen = {
-    false, 0, kAtkinsonSuppressionUm, kAtkinsonEconomodeGain, kAtkinsonDensity,
-    kAtkinsonLinearize, "Atkinson"};
+    false,
+    0,
+    kAtkinsonSuppressionUm,
+    kAtkinsonEconomodeGain,
+    kAtkinsonDensity,
+    kAtkinsonLinearize,
+    kAtkinsonMaxTonerEconomode,
+    kAtkinsonMaxTonerFull,
+    "Atkinson"};
 constexpr ScreenCalibration kAm45Screen = {
-    true, kAm45Cell, kAm45SuppressionUm, kAm45EconomodeGain, kAm45Density,
-    kAm45Linearize, "AM45"};
+    true,
+    kAm45Cell,
+    kAm45SuppressionUm,
+    kAm45EconomodeGain,
+    kAm45Density,
+    kAm45Linearize,
+    kAm45MaxTonerEconomode,
+    kAm45MaxTonerFull,
+    "AM45"};
 
 // Whichever screen this build prints with, chosen by SISTER_HALFTONE_SCREEN
 // at configure time. Constexpr, so the branch on `.clustered` at a call site

@@ -319,6 +319,7 @@ DotTransfer engine_transfer(const ScreenCalibration& screen,
   dt.suppression_um = screen.suppression_um;
   dt.economode_gain = economode ? screen.economode_gain : 1.0f;
   dt.density = screen.density;
+  dt.max_toner = economode ? screen.max_toner_economode : screen.max_toner_full;
   dt.clustered = screen.clustered;
   dt.cell = screen.cell > 0 ? screen.cell : 1;
   dt.linearize = screen.linearize;
@@ -326,6 +327,18 @@ DotTransfer engine_transfer(const ScreenCalibration& screen,
 }
 
 std::vector<uint8_t> dot_transfer_lut(const DotTransfer& dt) {
+  // Ink limit: the table is never allowed to ask for more than this,
+  // whatever the darkness model above computes. 255 (the default) is a
+  // no-op -- `std::min` against it leaves every other calibration
+  // byte-for-byte unchanged.
+  const uint8_t ink_cap = static_cast<uint8_t>(
+      std::lround(std::clamp(dt.max_toner, 0.0f, 1.0f) * 255.0f));
+  auto cap_ink = [ink_cap](std::vector<uint8_t>& table) {
+    for (uint8_t& v : table) {
+      v = std::min(v, ink_cap);
+    }
+  };
+
   std::vector<uint8_t> lut(256, 0);
   if (dt.suppression_um == 0.0f && dt.economode_gain == 1.0f &&
       dt.density == 1.0f && !dt.linearize) {
@@ -336,6 +349,7 @@ std::vector<uint8_t> dot_transfer_lut(const DotTransfer& dt) {
     for (int i = 0; i < 256; ++i) {
       lut[static_cast<size_t>(i)] = static_cast<uint8_t>(i);
     }
+    cap_ink(lut);
     return lut;
   }
 
@@ -383,7 +397,8 @@ std::vector<uint8_t> dot_transfer_lut(const DotTransfer& dt) {
     }
   }
   lut[0] = 0;      // paper stays paper
-  lut[255] = 255;  // and solid stays solid
+  lut[255] = 255;  // and solid stays solid, unless an ink cap pulls it back
+  cap_ink(lut);
   return lut;
 }
 
