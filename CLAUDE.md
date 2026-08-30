@@ -71,7 +71,15 @@ commit, then tag the commit `vMAJOR.MINOR.PATCH` (e.g. `v0.9.2`) with
 files from `distrib/` to.
 Release notes are user-facing only — what changed for someone printing to
 the HL-2030, in short bullet-point prose — never internal detail like
-tests, CI, or documentation changes.
+tests, CI, or documentation changes. Do not hard-wrap the notes: each
+bullet is a single line and GitHub wraps it. Every notes body ends with
+this centred image after the bullets, unchanged from v0.9.4:
+
+```html
+<p align="center">
+  <img width="700" src="https://github.com/user-attachments/assets/4c6299c5-f93c-40eb-9437-ab7a0e89196a" />
+</p>
+```
 
 ## Runtime architecture
 
