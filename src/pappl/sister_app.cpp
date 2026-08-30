@@ -12,6 +12,7 @@
 #include <pappl/pappl.h>
 
 #include <fcntl.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -50,6 +51,15 @@ constexpr const char* kStatusJobName = ".sister-status";
 // The screen this build prints with, and the darkness numbers calibrated for
 // it. Constexpr, so the other screen folds out of the binary.
 constexpr sisterhl2030::ScreenCalibration kScreen = sisterhl2030::active_screen();
+
+// How long one status transaction may hold the USB device. It runs between
+// jobs -- the print dialog asks for printer attributes immediately before it
+// submits -- so every millisecond here is a millisecond the next job spends
+// waiting for the device. The IOKit path in status/usb_printer.cc budgets
+// ~700 ms per PJL command; these match it. Worst case is the sum plus one
+// read timeout of overshoot, as the deadline is only tested between reads.
+constexpr long kStatusReplyMs = 2500;
+constexpr long kStatusDrainMs = 600;
 
 // Per-job state. PAPPL hands it back to every raster callback.
 struct JobState {
@@ -476,21 +486,74 @@ bool status_cb(pappl_printer_t* printer) {
     return true;  // in use elsewhere; not an error worth failing status over
   }
 
+  // Everything below runs against one wall clock, because the device is held
+  // for exactly as long as this takes and a job submitted meanwhile waits in
+  // start_job's "Waiting for device to become available" loop.
+  timeval start;
+  gettimeofday(&start, nullptr);
+  auto elapsed_ms = [&start]() {
+    timeval now;
+    gettimeofday(&now, nullptr);
+    return (now.tv_sec - start.tv_sec) * 1000 +
+           (now.tv_usec - start.tv_usec) / 1000;
+  };
+
+  char buf[2048];
+
+  // Clear the IN pipe first. The HL-2030's PJL readback lags a command
+  // behind (see collect_in in status/usb_printer.cc), which is why
+  // pjl_supply_query() ends with an ECHO whose only job is to shake the
+  // DRUMLIFE reply loose; the ECHO's own reply is surplus and
+  // pjl_response_complete() stops before it. Nothing else ever reads this
+  // device -- the print path only writes, and PAPPL clears no pipe on open --
+  // so without this every poll left a block behind for the next one to
+  // mistake for a fresh answer. Draining on the way in also picks up whatever
+  // the engine emitted during the last print job. pjl_query_supplies() does
+  // the same thing on the IOKit path.
+  unsigned stale = 0;
+  while (elapsed_ms() < kStatusDrainMs) {
+    const ssize_t got = papplDeviceRead(device, buf, sizeof(buf));
+    if (got <= 0) break;
+    stale += static_cast<unsigned>(got);
+  }
+
   const std::string query = sisterhl2030::pjl_supply_query();
   papplDeviceWrite(device, query.data(), query.size());
   papplDeviceFlush(device);
 
+  // Bound the wait on the clock, not on a count of reads. papplDeviceRead is
+  // a blocking bulk transfer, so counting iterations was really counting read
+  // timeouts: 25 of them held the device for over four minutes and stalled
+  // the job the print dialog had just submitted.
   std::string reply;
-  char buf[2048];
-  for (int i = 0; i < 25 && !sisterhl2030::pjl_response_complete(reply); ++i) {
+  while (elapsed_ms() < kStatusReplyMs &&
+         !sisterhl2030::pjl_response_complete(reply)) {
     const ssize_t got = papplDeviceRead(device, buf, sizeof(buf));
     if (got > 0) {
       reply.append(buf, static_cast<size_t>(got));
     } else {
-      usleep(100000);
+      // A read that comes back empty has already spent its timeout; this only
+      // keeps a hard error from spinning until the deadline.
+      usleep(20000);
     }
   }
+
+  const long held_ms = elapsed_ms();
   papplPrinterCloseDevice(printer);
+
+  // Whatever is still in the pipe stays there -- the next poll's drain takes
+  // it, and the print path never reads, so it bothers nobody in between.
+  // Draining here too would cost a second empty read (half a second of
+  // holding the device) to do what the drain above already does.
+  //
+  // A non-zero `stale` means the last transaction did leave something behind:
+  // that is the drain earning its keep, and the number to watch if status
+  // readings ever look like they belong to the poll before.
+  papplLogPrinter(printer, PAPPL_LOGLEVEL_DEBUG,
+                  "PJL status held the device %d ms: %u stale bytes dropped, "
+                  "%u read.",
+                  static_cast<int>(held_ms), stale,
+                  static_cast<unsigned>(reply.size()));
 
   if (reply.empty()) {
     papplLogPrinter(printer, PAPPL_LOGLEVEL_DEBUG, "No PJL status reply.");

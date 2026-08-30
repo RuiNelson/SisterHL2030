@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 # Bump this when shipping a user-visible driver change. The git sha is
 # appended automatically so an install can be matched to a exact build.
-project(sisterhl2030 VERSION 0.9.3 LANGUAGES CXX)
+project(sisterhl2030 VERSION 0.9.4 LANGUAGES CXX)
 
 set(SISTER_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 set(_sister_git_head "${CMAKE_SOURCE_DIR}/.git/HEAD")
@@ -137,7 +137,7 @@ if(SISTER_WITH_PAPPL)
   set(PAPPL_PC ${PAPPL_PREFIX}/lib/pkgconfig/pappl.pc)
   # Bump when cmake/patch_pappl_idle.cmake or the configure line changes so
   # the next cmake run rebuilds libpappl instead of reusing a fat/AppKit build.
-  set(PAPPL_STAMP_VALUE "text-3")
+  set(PAPPL_STAMP_VALUE "text-5")
   set(PAPPL_STAMP ${PAPPL_PREFIX}/.sister-pappl-stamp)
 
   set(_pappl_stamp_now "")

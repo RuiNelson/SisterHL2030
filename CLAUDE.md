@@ -52,7 +52,7 @@ the screen selection might have changed — `Install Sister HL2030.sh` already
 does this; a fresh `build -B` directory doesn't need it.
 
 The driver version is `project(sisterhl2030 VERSION …)` in `CMakeLists.txt`
-plus the git sha (`0.9.2+abc1234def56`). Bump the CMake version when shipping
+plus the git sha (`0.9.4+abc1234def56`). Bump the CMake version when shipping
 a user-visible driver change. `sister-printer-app --version` prints the full
 string; PAPPL advertises the semver half as `printer-firmware-string-version`.
 `Scripts/Check Sister HL2030.sh` compares the build, the install, and the
@@ -112,8 +112,11 @@ base.
 
 ### Consumables
 
-`status_cb()` opens the device, writes `pjl_supply_query()`, reads until
-`pjl_response_complete()`, and hands the result to `papplPrinterSetSupplies()`.
+`status_cb()` opens the device, drains whatever the last transaction left in
+the IN pipe, writes `pjl_supply_query()`, reads until
+`pjl_response_complete()` or `kStatusReplyMs`, and hands the result to
+`papplPrinterSetSupplies()`. Both the drain and the deadline matter — see
+"the status poll owns the device" under Traps.
 PAPPL derives `marker-levels`/`marker-names` from that itself, so the macOS
 Supply Levels panel works with no extra plumbing, and it advertises
 `printer-supply-info-uri` over plain http rather than the self-signed https
@@ -141,6 +144,33 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
 
 ### Traps that cost real time here
 
+- **The status poll owns the device, so its budget is the next job's wait.**
+  `papplDeviceRead` is a blocking bulk transfer, not a poll: upstream PAPPL
+  gives it ten seconds, so a loop counting reads is really counting read
+  timeouts. `status_cb`'s old `for (i < 25)` held the device for 252 s against
+  a printer that did not answer, and the print dialog asks for printer
+  attributes immediately *before* it submits — so the poll reliably lands
+  between two jobs and the second one sat in `start_job`'s "Waiting for device
+  to become available" loop for the whole four minutes. With
+  `max-active-jobs = 1` anything behind it was refused outright as
+  `server-error-busy`. Bound this on the wall clock (`kStatusReplyMs`), never
+  on an iteration count, and keep the total small — the device is unavailable
+  for exactly as long as `status_cb` runs. `patch_pappl_idle.cmake` brings the
+  USB *and* socket read timeouts down to 500 ms so a drain is affordable;
+  the socket one is patched too so `_fake_printer.py` reproduces the timing
+  the hardware has.
+- **Nothing but `status_cb` ever reads the printer, so it must leave the pipe
+  clean.** The print path only writes, and PAPPL clears no pipe on open, so an
+  unread reply block survives across open/close and the next poll reads it as
+  a fresh answer. `pjl_supply_query()` ends with `ECHO` — that trailing command
+  exists to shake the lagged `DRUMLIFE` reply loose (see `collect_in` in
+  `status/usb_printer.cc`: "the reply to command N often arrives after command
+  N+1 is sent"), and its own reply is surplus that `pjl_response_complete()`
+  stops before. Drain on the way *in*, which also clears whatever the engine
+  emitted during the last job; a trailing drain would cost another empty read
+  to do less. Do not make `ECHO` the completion sentinel — the hardware path
+  deliberately does not, and `docs/protocol.md` never confirmed the device
+  answers it. Watch the `stale bytes dropped` count in the debug log.
 - `papplMainloop`'s `footer_html` argument is **not** optional. Pass null and
   every web page segfaults the daemon inside `papplClientHTMLFooter`.
 - `papplLogJob` implements its own printf subset; `%zu` crashes it.

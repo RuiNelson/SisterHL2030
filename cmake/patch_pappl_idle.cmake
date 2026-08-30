@@ -11,6 +11,9 @@
 #   - Compile-out raw sockets, USB gadget, and TLS/network/security/log web
 #     pages so ld does not pull printer-raw/usb/httpmon or those HTML handlers
 #
+# It also carries one behavioural fix that is not about size: the device read
+# timeouts, which upstream sets to ten seconds (see below).
+#
 # Inputs: PAPPL_SRC (required), PAPPL_MAKEDEFS (optional, post-configure)
 
 if(NOT PAPPL_SRC)
@@ -342,6 +345,36 @@ sister_replace("${PAPPL_SRC}/pappl/printer.c"
   // Add icons...
   _papplSystemAddPrinterIcons(system, printer);
 ")
+
+# papplDeviceRead is a blocking bulk transfer, not a poll, and upstream gives
+# it ten seconds. status_cb has to drain the IN pipe between PJL transactions
+# (the HL-2030's readback lags a command behind, so a reply block is always
+# left over), and a drain costs one full timeout every time the pipe is
+# already dry -- ten seconds of holding the device while the next job waits.
+# The IOKit path in src/status/usb_printer.cc reads the same device in 20 ms
+# slices, so half a second is still generous for an answer that is coming.
+sister_replace("${PAPPL_SRC}/pappl/device-usb.c"
+"&icount, 10000)) < 0)"
+"&icount, 500)) < 0)")
+
+# The same budget for socket devices, so Scripts/_fake_printer.py and
+# tests/test_pappl_features.py exercise the timing the USB path actually has.
+# Left at ten seconds, a status poll against the stand-in printer holds the
+# device for the full ten rather than half a second, and the no-hardware
+# workflow in CLAUDE.md stops reproducing what users see.
+sister_replace("${PAPPL_SRC}/pappl/device-network.c"
+"  // Only read if we have data to read within 10 seconds...
+  data.fd      = sock->fd;
+  data.events  = POLLIN;
+  data.revents = 0;
+
+  while ((nfds = poll(&data, 1, 10000)) < 0)"
+"  // Only read if we have data to read within half a second...
+  data.fd      = sock->fd;
+  data.events  = POLLIN;
+  data.revents = 0;
+
+  while ((nfds = poll(&data, 1, 500)) < 0)")
 
 sister_replace("${PAPPL_SRC}/pappl/device-network.c"
 "  httpAddrFreeList(sock->list);
