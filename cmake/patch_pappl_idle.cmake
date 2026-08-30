@@ -376,6 +376,74 @@ sister_replace("${PAPPL_SRC}/pappl/device-network.c"
 
   while ((nfds = poll(&data, 1, 500)) < 0)")
 
+# Silent data loss on every short write. pappl_write() passed the caller's
+# buffer to the backend once and returned whatever came back; papplDeviceWrite()
+# then zeroed bufused on anything that was not negative, and papplDeviceFlush()
+# ignored the result outright -- so a partial transfer discarded the unwritten
+# tail and still reported success upward. libusb bulk writes are the ones that
+# do this (pappl_socket_write already loops), and a 600 dpi page goes through
+# ~40 of these flushes, each one able to drop bytes into the middle of a band.
+# The printer then reads a length or an opcode out of raster data and the rest
+# of the page decodes as garbage.
+#
+# Fixing pappl_write() covers every backend at once: it is the only thing that
+# calls write_cb, so no backend needs its own retry loop.
+sister_replace("${PAPPL_SRC}/pappl/device.c"
+"  ssize_t		count;		// Total bytes written
+
+
+  gettimeofday(&starttime, NULL);
+
+  count = (device->write_cb)(device, buffer, bytes);
+
+  gettimeofday(&endtime, NULL);
+
+  device->metrics.write_requests ++;
+  device->metrics.write_msecs += (size_t)(1000 * (endtime.tv_sec - starttime.tv_sec) + (endtime.tv_usec - starttime.tv_usec) / 1000);
+  if (count > 0)
+    device->metrics.write_bytes += (size_t)count;
+
+  return (count);"
+"  ssize_t		count;		// Bytes written this time
+  size_t		total = 0;	// Bytes written in all
+  bool			ok = true;	// Did all of it go out?
+
+
+  gettimeofday(&starttime, NULL);
+
+  // Keep writing until the whole buffer is out. A backend may transfer less
+  // than it was asked for -- libusb bulk writes can -- and every caller here
+  // treats a short write as a complete one, so the tail was dropped in
+  // silence and the job stream lost bytes mid-page.
+  while (total < bytes)
+  {
+    if ((count = (device->write_cb)(device, (const char *)buffer + total, bytes - total)) <= 0)
+    {
+      ok = false;
+      break;
+    }
+
+    total += (size_t)count;
+  }
+
+  gettimeofday(&endtime, NULL);
+
+  device->metrics.write_requests ++;
+  device->metrics.write_msecs += (size_t)(1000 * (endtime.tv_sec - starttime.tv_sec) + (endtime.tv_usec - starttime.tv_usec) / 1000);
+  device->metrics.write_bytes += total;
+
+  return (ok ? (ssize_t)total : -1);")
+
+sister_replace("${PAPPL_SRC}/pappl/device.c"
+"    pappl_write(device, device->buffer, device->bufused);
+    device->bufused = 0;"
+"    // Never drop the buffer on a failed write: say so, so a truncated job
+    // shows up in the log instead of only as a corrupt page.
+    if (pappl_write(device, device->buffer, device->bufused) < 0)
+      papplDeviceError(device, \"Unable to flush %d bytes to the device.\", (int)device->bufused);
+
+    device->bufused = 0;")
+
 sister_replace("${PAPPL_SRC}/pappl/device-network.c"
 "  httpAddrFreeList(sock->list);
   free(sock);

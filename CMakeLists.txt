@@ -137,7 +137,7 @@ if(SISTER_WITH_PAPPL)
   set(PAPPL_PC ${PAPPL_PREFIX}/lib/pkgconfig/pappl.pc)
   # Bump when cmake/patch_pappl_idle.cmake or the configure line changes so
   # the next cmake run rebuilds libpappl instead of reusing a fat/AppKit build.
-  set(PAPPL_STAMP_VALUE "text-5")
+  set(PAPPL_STAMP_VALUE "text-6")
   set(PAPPL_STAMP ${PAPPL_PREFIX}/.sister-pappl-stamp)
 
   set(_pappl_stamp_now "")

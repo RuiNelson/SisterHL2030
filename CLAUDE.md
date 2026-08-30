@@ -171,6 +171,21 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
   to do less. Do not make `ECHO` the completion sentinel — the hardware path
   deliberately does not, and `docs/protocol.md` never confirmed the device
   answers it. Watch the `stale bytes dropped` count in the debug log.
+- **A short write used to lose bytes in silence, and it looked like a
+  halftone bug.** Upstream `pappl_write()` handed the buffer to the backend
+  once; `papplDeviceWrite()` then zeroed `bufused` on anything not negative
+  and `papplDeviceFlush()` ignored the result entirely, so a partial transfer
+  discarded the tail and still reported success to the encoder. `libusb` bulk
+  writes are what return short (`pappl_socket_write` already loops), and a
+  600 dpi page makes ~40 of these 8 KB flushes, each able to drop bytes into
+  the middle of a band — after which the printer reads a length or an opcode
+  out of raster data and the page comes out with half-printed lines and blank
+  gaps that recover at the next band. `patch_pappl_idle.cmake` makes
+  `pappl_write()` loop; it is the only caller of `write_cb`, so fixing it
+  covers every backend and no backend needs its own retry.
+  The symptom points at the encoder and the encoder is innocent — check the
+  wire first. `Scripts/Capture a Print Job.sh` gets the real job off a real
+  app without paper; if its decode is clean, the fault is past the encoder.
 - `papplMainloop`'s `footer_html` argument is **not** optional. Pass null and
   every web page segfaults the daemon inside `papplClientHTMLFooter`.
 - `papplLogJob` implements its own printf subset; `%zu` crashes it.
