@@ -22,9 +22,9 @@ so your HL-2030 keeps working long after Rosetta 2 is gone.
 
 While rebuilding the driver, it also picked up a feature Brother's own
 driver never had: **AirPrint**. With the printer connected to your Mac over
-USB and printer sharing turned on in System Settings, every device on your
-network (other Macs, iPhones, iPads) can print to it wirelessly, no
-drivers required on their end.
+USB, every device on your network (other Macs, iPhones, iPads) can print
+to it wirelessly, no drivers required on their end. This Mac has to stay
+awake.
 
 ## Is this for you?
 
@@ -33,22 +33,22 @@ Mac (M1 or newer) by USB, yes.
 
 This driver does **not** work with the printer over a network/Wi-Fi
 connection, and it does not support Intel Macs. Plug the printer directly
-into the Apple Silicon Mac that will host it, then turn on sharing (see
-below) so that Mac shares it with everything else.
+into the Apple Silicon Mac that will host it; that Mac then makes it
+available to everything else on the network.
 
 ## Two print styles
 
 SisterHL2030 ships as two installers that differ in exactly one thing: how
 photos and shaded areas are turned into the dots this laser actually prints.
-Everything else — quality modes, AirPrint sharing, supply levels — is
-identical either way, and you can install the other one later if you change
-your mind; it just replaces the one already there.
+Everything else — quality modes, AirPrint, supply levels — is identical
+either way, and you can install the other one later if you change your
+mind; it just replaces the one already there.
 
 * **Newspaper style** — `InstallSisterDrivers(NewspaperStyle).pkg`. Dots are
   grouped into a crisp, evenly-spaced grid, the way a halftone photo looks
-  in a printed newspaper. It is better for people that only print office
-  documents. The graphical resolution is noticeably lower, but on this
-  cheap printer it produces clearer patterns for color graphics.
+  in a printed newspaper. Better for documents, line art, small text, and
+  color graphics: the pattern is clearer on this printer, at the cost of a
+  coarser look on photos.
 * **Pencil style** — `InstallSisterDrivers(PencilStyle).pkg`. Dots are
   scattered individually (a technique called Atkinson dithering, the one
   classic Mac graphics software used), giving a soft, sketchy texture like
@@ -57,7 +57,7 @@ your mind; it just replaces the one already there.
 
 Not sure which? Pencil style is the one this driver has always shipped
 with — reach for Newspaper style if what you print is mostly documents,
-line art or text rather than photos.
+line art, text, or color graphics rather than photos.
 
 | Newspaper style | Pencil style |
 | :---: | :---: |
@@ -70,10 +70,11 @@ line art or text rather than photos.
    one of `InstallSisterDrivers(NewspaperStyle).pkg` or
    `InstallSisterDrivers(PencilStyle).pkg` matches the style you want (see
    above).
-2. If you still have Brother's official driver installed, double-click
+2. Plug the printer into your Mac with a USB cable and turn it on. The
+   installer needs it connected so it can find the printer.
+3. If you still have Brother's official driver installed, double-click
    **`UninstallBrotherDrivers.pkg`** first and follow the prompts. The two
    drivers can't be installed side by side.
-3. Plug the printer into your Mac with a USB cable and turn it on.
 4. Double-click the `InstallSisterDrivers(...).pkg` you picked and follow
    the prompts. macOS will ask for your administrator password, which is
    normal for anything that installs system software.
@@ -81,38 +82,34 @@ line art or text rather than photos.
 The printer will now show up in System Settings → Printers & Scanners on
 this Mac, and you can print to it right away from here.
 
-<div align="center">
-  <img src="docs/anime_printing.webp" alt="Anime girl printing a document">
-</div>
-
-### Sharing it with other devices (AirPrint)
-
-To print from other Macs, iPhones, or iPads on your network, you need to
-turn sharing on for this printer; it is not shared automatically:
-
-1. Open **System Settings → General → Sharing**.
-2. Turn on **Printer Sharing**, then click the ⓘ next to it.
-3. Check the box next to the HL-2030 to share it.
-
-Once that's on, the printer appears in the Print dialog on every
-AirPrint-capable device on the same network, for as long as this Mac is
-awake and the printer is connected and powered on.
-
 All installers are signed with a Developer ID certificate, so macOS will let
 you open them normally (you may still see a first-run Gatekeeper prompt,
 which is expected for software from outside the App Store).
 
+<div align="center">
+  <img src="docs/anime_printing.webp" alt="Anime girl printing a document">
+</div>
+
+### Printing from other devices (AirPrint)
+
+Once the driver is installed, the printer is plugged in, and this Mac is
+awake, other Macs, iPhones, and iPads on the same network see it as
+**Brother HL-2030** and can print to it with no extra software.
+
+Leave Printer Sharing off for this printer in System Settings. The driver
+already advertises AirPrint; sharing it from there as well can make jobs
+hang.
+
 ### Uninstalling
 
 Double-click **`UninstallSisterDrivers.pkg`** from the same release. It
-removes the driver, its background service, and the printer queue, and
-leaves nothing behind.
+removes the driver, its background service, and the printer queue.
 
 ## What you get
 
 * **Native Apple Silicon**: no Rosetta 2, no emulation.
 * **AirPrint**: print from any Mac, iPhone, or iPad on the network, once
-  the printer is connected to one Mac over USB and sharing is turned on.
+  the printer is connected to one Mac over USB and that Mac is awake.
 * **Correct scaling**: pages print at 100% by default (older setups on
   Apple Silicon are prone to printing everything at half-size).
 * **Good-looking output**: a choice of two halftone styles for photos and
@@ -132,7 +129,7 @@ do all the work: turning the page into dots, choosing which dots become
 toner, and speaking Brother's own compressed language over USB. That's what
 this driver does. It runs as a small background service (a "printer
 application") that takes over the job the manual work would otherwise
-require, then adds the AirPrint sharing on top.
+require, then advertises AirPrint on the network.
 
 The wire format was recovered by studying Brother's own Linux drivers and
 double-checking the result against the real, official macOS driver on
