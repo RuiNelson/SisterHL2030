@@ -52,15 +52,17 @@ HQ1200 in the blob is `RAS1200MODE = TRUE` with `RESOLUTION = 600` (and
 a variant that also sets `PAPERFEEDSPEED`). The PPD advertises it as
 `1200x600dpi`.
 
-Sister maps the IPP print dialog **Quality** as:
+Sister maps the print dialog **Quality** as:
 
 | Quality | PJL |
 | --- | --- |
-| Draft (`print-quality=draft`) | `RESOLUTION = 300`, `ECONOMODE = ON` |
-| Normal | `RESOLUTION = 600`, `ECONOMODE = ON` |
-| Best (`print-quality=high`) | `RAS1200MODE = TRUE`, `ECONOMODE = OFF` |
+| Draft (`print-quality=3`) | `RESOLUTION = 300`, `ECONOMODE = ON` |
+| Normal (`print-quality=4`) | `RESOLUTION = 600`, `ECONOMODE = ON` |
+| Fine (`print-quality=5`, IPP high) | `RAS1200MODE = TRUE`, `ECONOMODE = OFF` |
 
 ### Media type (PJL)
+
+The printer accepts the official driver's vocabulary:
 
 | Driver option | `@PJL SET MEDIATYPE` |
 | --- | --- |
@@ -72,6 +74,15 @@ Sister maps the IPP print dialog **Quality** as:
 | Envelope | `ENVELOPES` |
 | Env. thick | `ENVTHICK` |
 | Env. thin | `ENVTHIN` |
+
+The shipping PAPPL path only emits a subset, from the IPP `media-type`:
+
+| IPP `media-type` | `@PJL SET MEDIATYPE` |
+| --- | --- |
+| stationery (default), auto, other | `REGULAR` |
+| cardstock, labels, stationery-letterhead | `THICK` |
+| transparency | `TRANSPARENCY` |
+| envelope | `ENVELOPES` |
 
 ### Paper size at 600 dpi
 
@@ -91,6 +102,9 @@ From `paperinf` (width × height in pixels at 600 dpi):
 | DL | 2599 | 5194 |
 | Com-10 | 2475 | 5700 |
 | Monarch | 2325 | 4500 |
+
+Sister advertises A4, Letter, Legal, Com-10 and DL over IPP; any other
+PWG size is sent as `PAPER = A4`.
 
 At 300 dpi, dimensions are halved; at 1200 they are doubled — and
 `RAS1200MODE` with a 600 dpi bitmap prints at half size, so the doubled
@@ -124,6 +138,9 @@ Graphics data is sent in **bands**. `saveDumb_1030` flushes a band when:
 - the line counter is a multiple of **128** (`count & 0x7f == 0` before
   increment, i.e. every 128 lines).
 
+The first line of every band is encoded as absolute (no delta against
+the previous line), including after a size flush mid-page.
+
 ### Band header
 
 ASCII decimal length, then `w`, then two bytes:
@@ -144,7 +161,7 @@ directly.
 | --- | --- |
 | White (all bits 0) | `0xFF` |
 | Absolute (no reference) | `0x01` + one **substitute** of the whole line |
-| Delta vs previous line | `edit_count` (1..254) + that many **edits** |
+| Delta vs previous line | `edit_count` (0..254) + that many **edits** (`0` = copy previous) |
 
 Edits, in stream order:
 
@@ -195,15 +212,43 @@ The HL-2030 USB interface is printer-class **bidirectional** (class 7,
 subclass 1, protocol 2): bulk OUT `0x01`, bulk IN `0x82`. IEEE 1284
 device ID is `MFG:Brother;CMD:PJL,HBP;MDL:HL-2030 series;CLS:PRINTER;`.
 
-`sister-status` sends one PJL transaction and reads until form-feed:
+The shipping driver reads supplies in `status_cb` in
+`sister-printer-app`, on the same device the job is written to. The
+`sister-status` CLI talks USB directly for debugging; it is not how
+System Settings gets its numbers.
+
+Each command is its own UEL-wrapped transaction (CRLF, unlike the job
+stream which uses LF). `pjl_supply_query()` concatenates four of them:
 
 ```
 ESC %-12345X@PJL CR LF
 @PJL INFO STATUS CR LF
+ESC %-12345X
+ESC %-12345X@PJL CR LF
 @PJL INFO PAGECOUNT CR LF
+ESC %-12345X
+ESC %-12345X@PJL CR LF
 @PJL INFO DRUMLIFE CR LF
 ESC %-12345X
+ESC %-12345X@PJL CR LF
+@PJL ECHO SisterHL2030 CR LF
+ESC %-12345X
 ```
+
+The reply to command N often arrives after command N+1 has already been
+sent, so `DRUMLIFE` is still in flight when `ECHO` goes out; the echo
+exists to shake that last reply loose. Its own reply is surplus.
+Completion is `CODE=` *and* `DRUMLIFE=` in the buffer
+(`pjl_response_complete()`), not a form-feed and not the `ECHO` text —
+the hardware path never confirmed the device answers `ECHO`.
+
+The IN pipe is drained on the way *in*. Nothing else on the print path
+ever reads, and PAPPL clears no pipe on open, so an unread block survives
+across close/open and the next poll would treat it as a fresh answer.
+A trailing drain would cost another empty read to do less. The wait is
+bound on the wall clock: `papplDeviceRead` is a blocking bulk transfer,
+so counting reads is really counting timeouts, and the device is
+unavailable for exactly as long as this callback runs.
 
 Confirmed on `04f9:0027` / serial `B9J561723` / firmware `Ver1.29`:
 
@@ -215,22 +260,19 @@ Confirmed on `04f9:0027` / serial `B9J561723` / firmware `Ver1.29`:
 | `INFO ID` | `"Brother HL-2030 series:84UZ81:Ver1.29"` |
 | `INFO CONSUMABLE` / `INFO TONER` / `DINQUIRE TONERLOW` | `"?"` (unsupported) |
 
-`CODE=10001` is ready, `CODE=40000` is sleep. `DISPLAY` is the front-panel
-string and follows the printer's own language setting, so Sister keys off
-`CODE` and only reads `DISPLAY` as a fallback for codes it does not map.
-Toner low is `CODE=10006`. The
-cartridge sensor is **not** a continuous percentage: Sister maps OK → 100,
-low → 15, empty → 0. Drum remaining is `round(100 × (12000 − DRUMLIFE) /
-12000)` (rated life from the service/user manuals).
+`CODE=10001` is ready, `CODE=40000` is sleep. Toner low is `CODE=10006`
+(and `40038` when the panel wants Go); empty is `CODE=40010`. `DISPLAY`
+is the front-panel string and follows the printer's own language setting,
+so Sister keys off `CODE` and only reads `DISPLAY` as a fallback for
+codes it does not map. The cartridge sensor is **not** a continuous
+percentage: Sister maps OK → 100, low → 15, empty → 0. Drum remaining is
+`round(100 × (12000 − DRUMLIFE) / 12000)` (rated life from the
+service/user manuals); `CODE=40129` forces empty, `CODE=40130` clamps to
+low.
 
-Levels are published twice, because the two consumers read different
-attributes. IPP `printer-supply` (toner + OPC) drives the printer's own
-`/supplies` page, while the macOS Supply Levels panel reads the classic
-`marker-levels` / `marker-names` set — a printer that publishes only
-`printer-supply` shows "no information available" there. CUPS copies
-`marker-*` from the device onto the queue when a job runs through the
-backend, so the panel refreshes on the next print, not on the daemon's
-3-minute poll. Apple's
-`ippeveprinter` hard-codes a waste-toner + toner pair on its `/supplies`
-form, so Sister sets the real octetString via `ATTR:` on the print command
-(and on a no-op job named `.sister-status` every 3 minutes).
+`status_cb` hands the two levels to `papplPrinterSetSupplies()`. PAPPL
+derives both `printer-supply` and the classic `marker-levels` /
+`marker-names` set from that, which is what the macOS Supply Levels
+panel reads. CUPS only copies `marker-*` onto the queue while a job
+runs through its backend, so a job named `.sister-status` reports
+status and prints nothing, to populate the panel without paper.
