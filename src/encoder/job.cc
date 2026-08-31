@@ -1,5 +1,7 @@
 // Copyright (C) 2026 Rui Nelson
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Job envelope and band packing. Wire format is docs/protocol.md.
 
 #include "encoder/job.h"
 
@@ -13,8 +15,12 @@
 namespace sisterhl2030 {
 namespace {
 
+// Flush a band every this many lines even if it is still under 16 384
+// payload bytes. Matches SendData_1030 (`count & 0x7f == 0`).
 constexpr int kLinesPerBand = 128;
 
+// Strip controls, quotes and non-ASCII so a job name is safe in logs. Empty
+// becomes "SisterHL2030"; longer than 79 characters is truncated.
 void sanitize_job_name(std::string* name) {
   std::replace_if(
       name->begin(), name->end(),
@@ -30,11 +36,14 @@ void sanitize_job_name(std::string* name) {
 
 void pjl(FILE* out, const char* line) { fputs(line, out); }
 
+// True for the three PJL envelope media types.
 bool is_envelope(const PageParams& p) {
   return p.mediatype == "ENVELOPES" || p.mediatype == "ENVTHICK" ||
          p.mediatype == "ENVTHIN";
 }
 
+// True when the page must feed from the manual slot: the job asked for it,
+// or the media cannot go through tray 1 (thick stock, labels, envelopes).
 bool wants_manual(const PageParams& p) {
   if (p.sourcetray == "MANUAL" || p.sourcetray == "MPTRAY") {
     return true;
@@ -44,6 +53,8 @@ bool wants_manual(const PageParams& p) {
   return p.mediatype == "THICK" || p.mediatype == "THICK2" || is_envelope(p);
 }
 
+// PCL paper source. Tray 1 is the macOS 1h1001H pair; 2 = manual slot;
+// 3 = envelope from that slot. See docs/protocol.md.
 void write_tray(FILE* out, const PageParams& p) {
   // Brother PCL paper source (HL-2070N column of the TRG, same family):
   //   1 / 1001 = tray 1 (fixed). macOS rastertobrother2030 emits 1h1001H.

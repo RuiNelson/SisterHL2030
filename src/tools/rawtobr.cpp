@@ -14,6 +14,8 @@
 
 namespace {
 
+// Flags match PageParams field names so a captured PBM can be re-encoded
+// with the same PJL the original job used.
 void usage() {
   std::cerr
       << "usage: sister-rawtobr [--resolution 300|600|1200] [--paper A4|LETTER|...]\n"
@@ -22,6 +24,7 @@ void usage() {
       << "Reads a binary PBM (P4) and writes a Brother HL-2030 job.\n";
 }
 
+// Consume PBM whitespace and `#` comments. Returns 0, or -1 at EOF.
 int skip_ws_and_comments(FILE* in) {
   int c;
   while ((c = fgetc(in)) != EOF) {
@@ -39,6 +42,8 @@ int skip_ws_and_comments(FILE* in) {
   return -1;
 }
 
+// Binary PBM (P4) → packed MSB-first rows. Width/height are rejected above
+// 20 000 × 30 000 so a corrupt header cannot allocate gigabytes.
 bool read_pbm(FILE* in, int* width, int* height, std::vector<uint8_t>* pixels) {
   char magic[3] = {};
   if (fread(magic, 1, 2, in) != 2 || magic[0] != 'P' || magic[1] != '4') {

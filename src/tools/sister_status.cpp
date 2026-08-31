@@ -21,10 +21,18 @@
 
 namespace {
 
+// Leftover from the retired ippeveprinter façade: serialise USB access
+// against the CUPS usb backend. Harmless if the file is missing — UsbLock
+// then falls back to /tmp.
 constexpr const char* kLockPath = "/Library/Printers/SisterHL2030/usb.lock";
+// Optional usb:// URI whose serial= query selects the device. Empty file
+// means the first HL-2030 on the bus.
 constexpr const char* kUriPath = "/Library/Printers/SisterHL2030/device-uri";
+// Dummy document for the --publish IPP job (the job name is .sister-status,
+// so the app prints nothing; the file only has to exist and be readable).
 constexpr const char* kDummyDoc = "/Library/Printers/SisterHL2030/icon.png";
 
+// Whole file, trailing whitespace stripped. Empty on open failure.
 std::string read_file(const char* path) {
   std::ifstream in(path);
   if (!in) {
@@ -38,6 +46,8 @@ std::string read_file(const char* path) {
   return s;
 }
 
+// Advisory flock on kLockPath (or /tmp fallback). `skip` is set when the
+// caller already holds the lock (SISTER_USB_LOCKED).
 class UsbLock {
  public:
   UsbLock(bool wait, bool skip) {
@@ -71,6 +81,7 @@ class UsbLock {
   bool busy_ = false;
 };
 
+// Submit a no-op Print-Job named .sister-status so CUPS copies marker-levels.
 bool publish_via_ipp_job(std::string* error) {
   char ipp_path[] = "/tmp/sister-status-jobXXXXXX";
   const int fd = mkstemp(ipp_path);
@@ -131,6 +142,7 @@ bool publish_via_ipp_job(std::string* error) {
   return true;
 }
 
+// Plain-text toner/drum/page-count to stdout.
 void print_human(const sisterhl2030::PrinterStatus& st) {
   std::printf("PJL status: CODE=%d DISPLAY=\"%s\" ONLINE=%s\n", st.code,
               st.display.c_str(), st.online ? "TRUE" : "FALSE");
@@ -155,6 +167,8 @@ void print_human(const sisterhl2030::PrinterStatus& st) {
   std::printf("\n");
 }
 
+// --ipp is the retired façade's ATTR:/STATE: format; --publish is the
+// CUPS marker-levels refresh the installer still uses.
 void usage() {
   std::fprintf(stderr,
                "usage: sister-status [--json|--ipp|--publish [--loop]]\n"

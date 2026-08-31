@@ -14,6 +14,9 @@
 namespace sisterhl2030 {
 namespace {
 
+// Extra length that does not fit in the opcode nibble/bits. Values below
+// 255 are one byte; 255 or more is `value/255` bytes of 0xFF plus the
+// remainder, matching SendData_1030.
 void write_overflow(int value, std::vector<uint8_t>* out) {
   if (value < 0) {
     return;
@@ -26,6 +29,9 @@ void write_overflow(int value, std::vector<uint8_t>* out) {
   out->push_back(static_cast<uint8_t>(value % 255));
 }
 
+// Substitute edit: copy `[first, last)` into the output at `offset` bytes
+// past the last decoded byte. Opcode packs offset (4 bits, max 15) and
+// count-minus-one (3 bits, max 7); the rest is overflow plus the payload.
 template <typename Iterator>
 void write_substitute(int offset, Iterator first, Iterator last,
                       std::vector<uint8_t>* out) {
@@ -38,6 +44,8 @@ void write_substitute(int offset, Iterator first, Iterator last,
   out->insert(out->end(), first, last);
 }
 
+// Repeat edit: write `count` copies of `value` at `offset`. Opcode high bit
+// is set; offset uses 2 bits (max 3) and count-minus-two uses 5 bits (max 31).
 void write_repeat(int offset, int count, uint8_t value,
                   std::vector<uint8_t>* out) {
   count -= 2;
@@ -49,10 +57,13 @@ void write_repeat(int offset, int count, uint8_t value,
   out->push_back(value);
 }
 
+// True if every byte is 0 (a white packed scanline).
 bool all_zeros(const std::vector<uint8_t>& buf) {
   return std::none_of(buf.begin(), buf.end(), [](uint8_t b) { return b != 0; });
 }
 
+// Advance both iterators over the matching prefix. Returns how many bytes
+// were skipped (the edit offset).
 template <typename It1, typename It2>
 int skip_matching(It1* first1, It1 last1, It2* first2) {
   auto mismatch = std::mismatch(*first1, last1, *first2);
@@ -62,6 +73,7 @@ int skip_matching(It1* first1, It1 last1, It2* first2) {
   return skipped;
 }
 
+// Run of identical bytes starting at `first`. Zero on an empty range.
 template <typename Iterator>
 int repeat_length(Iterator first, Iterator last) {
   if (first == last) {
@@ -73,6 +85,9 @@ int repeat_length(Iterator first, Iterator last) {
   return static_cast<int>(std::distance(first, it));
 }
 
+// How many bytes to emit as a substitute rather than a repeat: stops at a
+// two-byte match with the reference, or at a three-byte run of the same
+// value (which a repeat edit packs more tightly).
 template <typename It1, typename It2>
 int substitute_length(It1 first1, It1 last1, It2 first2) {
   if (first1 == last1) {
@@ -123,6 +138,8 @@ std::vector<uint8_t> encode_line(const std::vector<uint8_t>& line,
   out.reserve(line.size() + 16);
   out.push_back(0);
 
+  // First byte of a delta line is the edit count; 0xFF is reserved for
+  // an empty line, so at most 254 edits. The remainder is one substitute.
   constexpr uint8_t kMaxEdits = 254;
   int num_edits = 0;
 

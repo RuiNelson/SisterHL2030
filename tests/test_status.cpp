@@ -11,6 +11,7 @@ namespace {
 
 int failures = 0;
 
+// Count a failed assertion. The process still runs the rest of the suite.
 void expect(bool cond, const char* msg) {
   if (!cond) {
     std::fprintf(stderr, "FAIL: %s\n", msg);

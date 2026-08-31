@@ -1,5 +1,10 @@
 // Copyright (C) 2026 Rui Nelson
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Colour → toner, engine darkness model, and the two halftone screens
+// (Atkinson error diffusion and AM45 clustered-dot). Public constants are
+// the calibrated numbers; change them with the calibration sheet, not by
+// adding per-mode fudge factors.
 
 #ifndef SISTERHL2030_HALFTONE_H
 #define SISTERHL2030_HALFTONE_H
@@ -86,10 +91,12 @@ uint8_t rgb_to_toner(uint8_t r, uint8_t g, uint8_t b);
 constexpr float kChromaFloor = 0.29f;
 constexpr float kChromaKnee = 0.3042f;
 
-// DeviceGray (0 = black, 255 = white) → toner.
+// DeviceGray / sGray (0 = black, 255 = white) → toner 0..255. Equal-RGB
+// path through rgb_to_toner, so a page of greys matches the sRGB path.
 uint8_t device_gray_to_toner(uint8_t gray);
 
-// DeviceK (0 = white, 255 = black) → toner.
+// DeviceK (0 = white, 255 = black) → toner 0..255. Skips the sRGB
+// round-trip; only the laser curve is applied.
 uint8_t device_k_to_toner(uint8_t k);
 
 // Double width by pixel replication: the 600 dpi raster resampled onto
@@ -111,11 +118,12 @@ void nn_upsample_2x_x(std::vector<uint8_t>& toner, unsigned& width,
 // `1200x600dpi`. So the halftone is computed at 1200x600 and each dithered row
 // is emitted twice to fill the doubled bitmap.
 struct DeviceGrid {
-  int dpi_x = 600;
-  int dpi_y = 600;
+  int dpi_x = 600;  // samples per inch along the scan line
+  int dpi_y = 600;  // samples per inch down the page
 };
 
-// `pjl_resolution` is PageParams::resolution: 300, 600, or 1200 (RAS1200MODE).
+// Addressable grid for `pjl_resolution` (PageParams::resolution):
+// 300 → 300×300, 600 → 600×600, 1200 (RAS1200MODE) → 1200×600.
 DeviceGrid device_grid(int pjl_resolution);
 
 // Resample a square `src_dpi` contone page onto `grid`, in place. Box-average
@@ -314,8 +322,8 @@ constexpr float kAm45MaxTonerDraftNormal = 1.0f;
 constexpr float kAm45MaxTonerFine = 1.0f;
 
 struct ScreenCalibration {
-  bool clustered;
-  unsigned cell;
+  bool clustered;     // AM45 rather than Atkinson
+  unsigned cell;      // AM45 dot radius in device pixels; unused for Atkinson
   float suppression_um;
   float density;
   bool linearize;
@@ -323,7 +331,7 @@ struct ScreenCalibration {
   // `DotTransfer::max_toner` and `ink_limit()`.
   float max_toner_draft_normal;
   float max_toner_fine;
-  const char* name;
+  const char* name;  // "Atkinson" or "AM45", for logs
 };
 
 constexpr ScreenCalibration kAtkinsonScreen = {

@@ -19,6 +19,7 @@ namespace {
 
 int failures = 0;
 
+// Count a failed assertion. The process still runs the rest of the suite.
 void expect(bool cond, const char* msg) {
   if (!cond) {
     std::fprintf(stderr, "FAIL: %s\n", msg);
@@ -26,6 +27,7 @@ void expect(bool cond, const char* msg) {
   }
 }
 
+// Rewind and read the whole FILE* into a byte vector.
 std::vector<uint8_t> slurp(FILE* f) {
   std::vector<uint8_t> out;
   std::fseek(f, 0, SEEK_SET);
@@ -36,6 +38,7 @@ std::vector<uint8_t> slurp(FILE* f) {
   return out;
 }
 
+// True if `needle` occurs as a byte sequence in `hay`.
 bool contains(const std::vector<uint8_t>& hay, const char* needle) {
   const size_t n = std::strlen(needle);
   if (n == 0 || n > hay.size()) {
@@ -47,6 +50,7 @@ bool contains(const std::vector<uint8_t>& hay, const char* needle) {
 
 }  // namespace
 
+// Black pixels in one packed MSB-first row of `width` bits.
 int popcount_row(const uint8_t* packed, unsigned width) {
   unsigned n = 0;
   for (unsigned x = 0; x < width; ++x) {

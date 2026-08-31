@@ -25,6 +25,34 @@ namespace {
 using DeviceIntf = IOUSBDeviceInterface650**;
 using IfaceIntf = IOUSBInterfaceInterface650**;
 
+// Bulk OUT timeout (no-data + completion), milliseconds. Generous: a
+// supply query is a few hundred bytes.
+constexpr uint32_t kBulkWriteTimeoutMs = 2000;
+
+// Per-read timeout for drain and collect. Short so an empty pipe does not
+// hold the device; the loop spends the rest of its budget in usleep.
+constexpr uint32_t kPipeReadTimeoutMs = 20;
+
+// Drain: up to this many reads, with a 50 ms pause on the first eight
+// empty ones, then stop. Leftover from the previous open must be gone
+// before a new query is written.
+constexpr int kDrainMaxReads = 40;
+constexpr int kDrainEmptyRetries = 8;
+constexpr useconds_t kDrainRetryUs = 50000;
+
+// collect_in slices the wait into this many milliseconds per ReadPipeTO.
+constexpr int kCollectSliceMs = 50;
+constexpr useconds_t kCollectSliceUs = 50000;
+
+// How long to wait after a single INFO command, and after each command of
+// a supplies query. The HL-2030's reply to command N often arrives after
+// N+1 is sent, so the last ECHO exists to shake DRUMLIFE loose; a short
+// extra collect then picks up any tail.
+constexpr int kSingleCommandWaitMs = 800;
+constexpr int kSupplyCommandWaitMs = 700;
+constexpr int kSupplyTailWaitMs = 200;
+
+// CFString → UTF-8 std::string, or empty if `ref` is not a string.
 std::string cf_string(CFTypeRef ref) {
   if (!ref || CFGetTypeID(ref) != CFStringGetTypeID()) {
     return {};
@@ -41,6 +69,7 @@ std::string cf_string(CFTypeRef ref) {
   return {};
 }
 
+// IORegistry string property, or empty if missing / not a CFString.
 std::string registry_str(io_service_t service, CFStringRef key) {
   CFTypeRef ref =
       IORegistryEntryCreateCFProperty(service, key, kCFAllocatorDefault, 0);
@@ -51,6 +80,7 @@ std::string registry_str(io_service_t service, CFStringRef key) {
   return out;
 }
 
+// IORegistry integer property as uint16, or 0 if missing.
 uint16_t registry_u16(io_service_t service, CFStringRef key) {
   CFTypeRef ref =
       IORegistryEntryCreateCFProperty(service, key, kCFAllocatorDefault, 0);
@@ -66,13 +96,15 @@ uint16_t registry_u16(io_service_t service, CFStringRef key) {
   return v;
 }
 
+// One opened HL-2030: device + printer-class interface + bulk pipes.
 struct Opened {
   io_service_t service = 0;
   DeviceIntf dev = nullptr;
   IfaceIntf iface = nullptr;
-  UInt8 out_pipe = 0;
-  UInt8 in_pipe = 0;
+  UInt8 out_pipe = 0;  // bulk OUT pipe index (1-based)
+  UInt8 in_pipe = 0;   // bulk IN pipe index (1-based)
 
+  // Release the interface, device and io_service_t, in that order.
   void close() {
     if (iface) {
       (*iface)->USBInterfaceClose(iface);
@@ -91,6 +123,7 @@ struct Opened {
   }
 };
 
+// Seize the printer-class interface and locate bulk IN/OUT pipes.
 bool open_interface(Opened* o, std::string* error) {
   IOUSBFindInterfaceRequest req{};
   req.bInterfaceClass = kUSBPrintingClass;
@@ -163,6 +196,7 @@ bool open_interface(Opened* o, std::string* error) {
   return true;
 }
 
+// Open the USB device, select configuration 0 if needed, then the interface.
 bool open_device(io_service_t service, Opened* o, std::string* error) {
   o->service = service;
   IOObjectRetain(service);
@@ -210,6 +244,7 @@ bool open_device(io_service_t service, Opened* o, std::string* error) {
   return open_interface(o, error);
 }
 
+// First HL-2030 on the bus, or the one whose USB serial matches.
 io_service_t find_hl2030(const std::string& want_serial, std::string* error) {
   CFMutableDictionaryRef matching = IOServiceMatching("IOUSBHostDevice");
   if (!matching) {
@@ -252,10 +287,11 @@ io_service_t find_hl2030(const std::string& want_serial, std::string* error) {
   return found;
 }
 
+// One bulk OUT transfer. Does not retry; a short write is a hard failure.
 bool bulk_write(Opened* o, const uint8_t* data, uint32_t n, std::string* error) {
   const IOReturn kr =
       (*o->iface)->WritePipeTO(o->iface, o->out_pipe, const_cast<uint8_t*>(data), n,
-                               2000, 2000);
+                               kBulkWriteTimeoutMs, kBulkWriteTimeoutMs);
   if (kr != kIOReturnSuccess) {
     *error = "USB bulk OUT failed";
     return false;
@@ -263,29 +299,32 @@ bool bulk_write(Opened* o, const uint8_t* data, uint32_t n, std::string* error) 
   return true;
 }
 
+// Drop whatever the last transaction left in the IN pipe.
 void drain_in(Opened* o) {
-  for (int i = 0; i < 40; ++i) {
+  for (int i = 0; i < kDrainMaxReads; ++i) {
     uint8_t buf[256];
     UInt32 n = sizeof(buf);
     const IOReturn kr =
-        (*o->iface)->ReadPipeTO(o->iface, o->in_pipe, buf, &n, 20, 20);
+        (*o->iface)->ReadPipeTO(o->iface, o->in_pipe, buf, &n,
+                                kPipeReadTimeoutMs, kPipeReadTimeoutMs);
     if (kr == kIOReturnSuccess && n > 0) {
       continue;
     }
-    if (i < 8) {
-      usleep(50000);
+    if (i < kDrainEmptyRetries) {
+      usleep(kDrainRetryUs);
       continue;
     }
     break;
   }
 }
 
+// Local name for pjl_response_complete so the collect loop reads as
+// "stop once the reply is complete".
 bool response_complete(const std::string& s) {
   return pjl_response_complete(s);
 }
 
-}  // namespace
-
+// Wrap `command` in UELs and write it to bulk OUT.
 bool write_pjl(Opened* o, const std::string& command, std::string* error) {
   const std::string payload = pjl_command(command);
   return bulk_write(o, reinterpret_cast<const uint8_t*>(payload.data()),
@@ -295,18 +334,21 @@ bool write_pjl(Opened* o, const std::string& command, std::string* error) {
 // Append whatever the printer sends for ~wait_ms. HL-2030 PJL readback is
 // lagged: the reply to command N often arrives after command N+1 is sent.
 void collect_in(Opened* o, std::string* acc, int wait_ms) {
-  const int slices = std::max(1, wait_ms / 50);
+  const int slices = std::max(1, wait_ms / kCollectSliceMs);
   for (int i = 0; i < slices; ++i) {
     uint8_t buf[256];
     UInt32 n = sizeof(buf);
     const IOReturn kr =
-        (*o->iface)->ReadPipeTO(o->iface, o->in_pipe, buf, &n, 20, 20);
+        (*o->iface)->ReadPipeTO(o->iface, o->in_pipe, buf, &n,
+                                kPipeReadTimeoutMs, kPipeReadTimeoutMs);
     if (kr == kIOReturnSuccess && n > 0) {
       acc->append(reinterpret_cast<char*>(buf), n);
     }
-    usleep(50000);
+    usleep(kCollectSliceUs);
   }
 }
+
+}  // namespace
 
 bool pjl_query(const std::string& want_serial, const std::string& commands_crlf,
                std::string* response, std::string* error) {
@@ -329,7 +371,7 @@ bool pjl_query(const std::string& want_serial, const std::string& commands_crlf,
     o.close();
     return false;
   }
-  collect_in(&o, response, 800);
+  collect_in(&o, response, kSingleCommandWaitMs);
   o.close();
   if (response->empty()) {
     *error = "no PJL response";
@@ -362,9 +404,9 @@ bool pjl_query_supplies(const std::string& want_serial, std::string* response,
       o.close();
       return false;
     }
-    collect_in(&o, response, 700);
+    collect_in(&o, response, kSupplyCommandWaitMs);
     if (response_complete(*response)) {
-      collect_in(&o, response, 200);
+      collect_in(&o, response, kSupplyTailWaitMs);
       o.close();
       return true;
     }

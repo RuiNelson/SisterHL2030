@@ -21,6 +21,7 @@
 
 namespace {
 
+// CUPS sends SIGTERM when the job is cancelled. Checked between pages.
 volatile sig_atomic_t interrupted = 0;
 
 void on_sigterm(int) { interrupted = 1; }
@@ -29,6 +30,7 @@ void on_sigterm(int) { interrupted = 1; }
 // it. Constexpr, so the other screen folds out of the binary.
 constexpr sisterhl2030::ScreenCalibration kScreen = sisterhl2030::active_screen();
 
+// ASCII uppercase. Option tokens from CUPS arrive in mixed case.
 std::string upper(std::string s) {
   for (char& c : s) {
     c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -63,6 +65,8 @@ std::string option_value(const char* options, const char* key) {
   return {};
 }
 
+// CUPS MediaType string or cupsMediaType enum → PJL MEDIATYPE. The string
+// wins when present; the numeric fallback is the cupsMediaType table.
 std::string pjl_media(const char* media_type, unsigned cups_media) {
   std::string m = media_type ? media_type : "";
   m = upper(m);
@@ -112,6 +116,8 @@ std::string pjl_media(const char* media_type, unsigned cups_media) {
   }
 }
 
+// cupsPageSizeName, then PageSize in points, then A4. Names are uppercased
+// so "Letter" and "LETTER" both match.
 std::string pjl_paper(const cups_page_header2_t& h) {
   std::string name = h.cupsPageSizeName[0] ? h.cupsPageSizeName : "";
   name = upper(name);
@@ -149,6 +155,8 @@ std::string pjl_paper(const cups_page_header2_t& h) {
   return name.empty() ? "A4" : name;
 }
 
+// Raster HWResolution → 300 / 600 / 1200. Thresholds sit halfway between
+// the advertised dpi values so a slightly-off header still classifies.
 int pjl_resolution(const cups_page_header2_t& h) {
   const unsigned dpi = h.HWResolution[0];
   if (dpi >= 900) {
@@ -189,6 +197,7 @@ int requested_resolution(const char* options, const cups_page_header2_t& h) {
   return pjl_resolution(h);
 }
 
+// Short name for the CUPS log line: 300dpi / 600dpi / HQ1200.
 const char* mode_name(int dpi) {
   if (dpi >= 900) {
     return "HQ1200";
@@ -199,6 +208,7 @@ const char* mode_name(int dpi) {
   return "300dpi";
 }
 
+// First byte of a sample. 16-bit raster is treated as high-byte-only.
 uint8_t sample8(const unsigned char* p, int bpc) {
   if (bpc >= 16) {
     return p[0];  // high byte of 16-bit big-endian-ish sample
@@ -206,6 +216,7 @@ uint8_t sample8(const unsigned char* p, int bpc) {
   return p[0];
 }
 
+// One CUPS pixel → toner 0..255, dispatching on cupsColorSpace.
 uint8_t toner_at(const cups_page_header2_t& h, const unsigned char* pixel) {
   const int bpc = static_cast<int>(h.cupsBitsPerColor);
   const unsigned n = std::max(1u, h.cupsNumColors);
@@ -226,6 +237,7 @@ uint8_t toner_at(const cups_page_header2_t& h, const unsigned char* pixel) {
   return sisterhl2030::rgb_to_toner(r, g, b);
 }
 
+// Convert one 8/16/24-bit raster row into a toner row of cupsWidth samples.
 void row_to_toner(const cups_page_header2_t& h, const unsigned char* src,
                   std::vector<uint8_t>& toner) {
   const unsigned width = h.cupsWidth;
@@ -236,6 +248,8 @@ void row_to_toner(const cups_page_header2_t& h, const unsigned char* src,
   }
 }
 
+// Copy a 1-bit CUPS row into packed MSB-first 1=black. DeviceW/sGray is
+// inverted (CUPS 1 = white).
 void pack_1bit_row(const cups_page_header2_t& h, const unsigned char* src,
                    std::vector<uint8_t>& dst) {
   const unsigned width = h.cupsWidth;

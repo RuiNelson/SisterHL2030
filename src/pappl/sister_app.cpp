@@ -36,9 +36,14 @@
 
 namespace {
 
+// PAPPL driver name (`-m` / Create-Printer). Reverse-DNS is not required
+// here; the LaunchDaemon label is the one that uses com.ruinelson.
 constexpr const char* kDriverName = "sister-hl2030";
+// make-and-model string, and the human name in `pappl_pr_driver_t`.
 constexpr const char* kDriverDesc = "Brother HL-2030 series";
+// IEEE 1284 device ID. Must match the hardware so auto-add can find it.
 constexpr const char* kDeviceId = "MFG:Brother;MDL:HL-2030 series;CMD:PJL,HBP;CLS:PRINTER;";
+// Queue artwork. PAPPL serves the same file for all three icon sizes.
 constexpr const char* kIconPath = "/Library/Printers/SisterHL2030/icon.png";
 // What AirPrint clients show. The IPP printer name cannot hold spaces, so the
 // friendly name is set separately -- the façade advertised the same string.
@@ -64,17 +69,17 @@ constexpr long kStatusDrainMs = 600;
 // Per-job state. PAPPL hands it back to every raster callback.
 struct JobState {
   bool status_only = false;  // named kStatusJobName: report status, print nothing
-  FILE* stream = nullptr;
+  FILE* stream = nullptr;    // funopen(3) wrapper around the PAPPL device
   std::unique_ptr<sisterhl2030::Job> job;
   sisterhl2030::PageParams params;
   std::vector<uint8_t> toner;  // width*height, 0 = paper white, 255 = black
   unsigned width = 0;
   unsigned height = 0;
-  unsigned lines_seen = 0;
-  int raster_dpi = 600;
+  unsigned lines_seen = 0;  // rwriteline calls; compared to height in the log
+  int raster_dpi = 600;     // dpi of the raster PAPPL handed over
 };
 
-// Adapt the PAPPL device to the FILE* the encoder writes to.
+// funopen(3) write callback: PAPPL device as a FILE* the encoder can fwrite.
 int device_write(void* cookie, const char* buffer, int bytes) {
   auto* device = static_cast<pappl_device_t*>(cookie);
   const ssize_t written =
@@ -82,6 +87,7 @@ int device_write(void* cookie, const char* buffer, int bytes) {
   return written < 0 ? -1 : static_cast<int>(written);
 }
 
+// PWG media size name → PJL PAPER. Unrecognised sizes become A4.
 std::string pjl_paper(const char* pwg_size) {
   const std::string s = pwg_size ? pwg_size : "";
   if (s.find("na_letter") == 0) return "LETTER";
@@ -97,6 +103,7 @@ std::string pjl_paper(const char* pwg_size) {
   return "A4";
 }
 
+// IPP media-source → PageParams::sourcetray (TRAY1 or MANUAL).
 std::string pjl_tray(const char* source) {
   const std::string s = source ? source : "";
   if (s == "manual" || s == "by-pass-tray" || s == "manual-feed") {
@@ -105,6 +112,8 @@ std::string pjl_tray(const char* source) {
   return "TRAY1";
 }
 
+// IPP media-type → PJL MEDIATYPE. Subset of the official vocabulary;
+// see docs/protocol.md. Unknown types become REGULAR.
 std::string pjl_mediatype(const char* pwg_type) {
   const std::string t = pwg_type ? pwg_type : "";
   if (t == "envelope") return "ENVELOPES";
@@ -115,6 +124,8 @@ std::string pjl_mediatype(const char* pwg_type) {
   return "REGULAR";  // "stationery", "auto", "other"
 }
 
+// Horizontal dpi of the raster PAPPL actually handed over. Prefers the
+// CUPS header; falls back to the job's printer-resolution, then 600.
 int raster_dpi_of(const pappl_pr_options_t* options) {
   if (options->header.HWResolution[0] > 0) {
     return static_cast<int>(options->header.HWResolution[0]);
@@ -244,6 +255,8 @@ bool printfile(pappl_job_t* job, pappl_pr_options_t* options,
   return ok;
 }
 
+// PAPPL: job is starting. Allocates JobState and opens the encoder stream.
+// A job named kStatusJobName prints nothing.
 bool rstartjob(pappl_job_t* job, pappl_pr_options_t* options,
                pappl_device_t* device) {
   (void)options;
@@ -270,6 +283,8 @@ bool rstartjob(pappl_job_t* job, pappl_pr_options_t* options,
   return true;
 }
 
+// PAPPL: page is starting. Sizes the toner buffer and resolves PageParams
+// from quality, media and the raster dpi.
 bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
                 pappl_device_t* device, unsigned page) {
   (void)device;
@@ -305,6 +320,7 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
   return true;
 }
 
+// PAPPL: one raster row. Converted to toner 0..255 and stored at row `y`.
 bool rwriteline(pappl_job_t* job, pappl_pr_options_t* options,
                 pappl_device_t* device, unsigned y, const unsigned char* line) {
   (void)options;
@@ -318,6 +334,7 @@ bool rwriteline(pappl_job_t* job, pappl_pr_options_t* options,
   return true;
 }
 
+// PAPPL: page is complete. Resample → transfer LUT → dither → pack → encode.
 bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
               pappl_device_t* device, unsigned page) {
   (void)options;
@@ -438,6 +455,7 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   return true;
 }
 
+// PAPPL: job is complete. Writes the closing UEL, flushes, frees JobState.
 bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
              pappl_device_t* device) {
   (void)options;
@@ -652,6 +670,7 @@ const char* const kMedia[] = {
     "iso_dl_110x220mm",
 };
 
+// PAPPL driver callback: fill pappl_pr_driver_data_t for kDriverName.
 bool driver_cb(pappl_system_t* system, const char* driver_name,
                const char* device_uri, const char* device_id,
                pappl_pr_driver_data_t* driver_data, ipp_t** driver_attrs,
@@ -833,6 +852,8 @@ pappl_system_t* make_system(int num_options, cups_option_t* options,
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  // sister-printer-app --version is what Scripts/Check Sister HL2030.sh
+  // compares against the installed binary.
   if (argc >= 2 && (!std::strcmp(argv[1], "--version") ||
                     !std::strcmp(argv[1], "version"))) {
     std::puts(SISTER_VERSION_FULL);

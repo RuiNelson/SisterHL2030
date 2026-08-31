@@ -33,18 +33,22 @@ constexpr float kShadowGamma = 1.8f;
 constexpr float kGammaBlendStart = 0.12f;
 constexpr float kGammaBlendSpan = 0.55f;
 
+// IEC 61966-2-1 sRGB electro-optical transfer, 8-bit channel → linear light.
 float srgb_to_linear(uint8_t c) {
   const float v = c / 255.0f;
   return v <= 0.04045f ? v / 12.92f
                        : std::pow((v + 0.055f) / 1.055f, 2.4f);
 }
 
+// Inverse of srgb_to_linear, linear luminance → gamma-encoded 0..1.
 float linear_to_srgb(float y) {
   y = std::clamp(y, 0.0f, 1.0f);
   return y <= 0.0031308f ? y * 12.92f
                          : 1.055f * std::pow(y, 1.0f / 2.4f) - 0.055f;
 }
 
+// Laser curve: `blackness` 0..1 (paper → solid) → toner 0..255. Highlights
+// stay near gamma 1.0; shadows/midtones blend to gamma 1.8.
 uint8_t coverage_from_blackness(float blackness) {
   blackness = std::clamp(blackness, 0.0f, 1.0f);
   float t = (blackness - kGammaBlendStart) / kGammaBlendSpan;
@@ -125,6 +129,7 @@ void nn_upsample_2x_x(std::vector<uint8_t>& toner, unsigned& width,
 
 namespace {
 
+// Box-average every pair of rows. Used when the source dpi is twice grid.dpi_y.
 void halve_y(std::vector<uint8_t>& toner, unsigned width, unsigned& height) {
   if (width == 0 || height < 2) {
     return;
@@ -143,6 +148,7 @@ void halve_y(std::vector<uint8_t>& toner, unsigned width, unsigned& height) {
   height = nh;
 }
 
+// Box-average every pair of columns. Used when the source dpi is twice grid.dpi_x.
 void halve_x(std::vector<uint8_t>& toner, unsigned& width, unsigned height) {
   if (width < 2 || height == 0) {
     return;
@@ -161,6 +167,7 @@ void halve_x(std::vector<uint8_t>& toner, unsigned& width, unsigned height) {
   width = nw;
 }
 
+// Pixel-replicate each row. Used when the grid is twice the source in Y.
 void double_y(std::vector<uint8_t>& toner, unsigned width, unsigned& height) {
   if (width == 0 || height == 0) {
     return;
@@ -497,12 +504,13 @@ namespace {
 // every coverage level.
 class ClusteredDotScreen {
  public:
+  // Build the 2k × 2k threshold LUT for a cell of radius `k` device pixels.
   explicit ClusteredDotScreen(unsigned k)
       : period_(2 * k), lut_(static_cast<size_t>(period_) * period_, 0) {
     struct Entry {
-      unsigned s;
-      unsigned d;
-      long distsq;
+      unsigned s;     // x+y, modulo 2*cell
+      unsigned d;     // x-y, modulo 2*cell
+      long distsq;    // distance² from the cell centre
     };
     std::vector<Entry> entries;
     entries.reserve(static_cast<size_t>(period_) * k);
@@ -535,6 +543,7 @@ class ClusteredDotScreen {
     }
   }
 
+  // Ordered-dither threshold at device pixel (x, y), 0..255.
   uint8_t threshold(int x, int y) const {
     const int p = static_cast<int>(period_);
     int s = (x + y) % p;
@@ -549,8 +558,8 @@ class ClusteredDotScreen {
   }
 
  private:
-  unsigned period_;
-  std::vector<uint8_t> lut_;
+  unsigned period_;          // 2 * cell; s and d are taken modulo this
+  std::vector<uint8_t> lut_;  // threshold at (s, d), row-major period_²
 };
 
 }  // namespace

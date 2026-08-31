@@ -18,6 +18,7 @@
 
 namespace {
 
+// No-argument default is the built-in chart next to the binary.
 void usage() {
   std::cerr
       << "usage: sister-preview [--chart] [--cell N] [-o out.bmp] [image]\n"
@@ -28,6 +29,8 @@ void usage() {
       << "Without arguments, writes a chart next to the binary.\n";
 }
 
+// 24-bit BMP, bottom-up, BGR order, rows padded to 4 bytes. `bgr` is
+// tightly packed top-down BGR (3 bytes/pixel).
 bool write_bmp_bgr(const char* path, int w, int h,
                    const std::vector<uint8_t>& bgr) {
   const int rowb = (w * 3 + 3) & ~3;
@@ -69,6 +72,8 @@ bool write_bmp_bgr(const char* path, int w, int h,
   return true;
 }
 
+// 24- or 32-bit BMP → tightly packed top-down BGR. 32-bit alpha is
+// composited onto white paper so transparent PNG pixels stay paper, not toner.
 bool read_bmp_bgr(const char* path, int* w, int* h, std::vector<uint8_t>* bgr) {
   FILE* f = std::fopen(path, "rb");
   if (!f) {
@@ -132,6 +137,7 @@ bool read_bmp_bgr(const char* path, int* w, int* h, std::vector<uint8_t>* bgr) {
   return true;
 }
 
+// Fill [x0, x1) × [y0, y1) in a tightly packed RGB (or BGR) buffer.
 void fill_rect(std::vector<uint8_t>& rgb, int w, int h, int x0, int y0, int x1,
                int y1, uint8_t r, uint8_t g, uint8_t b) {
   x0 = std::max(0, x0);
@@ -148,6 +154,7 @@ void fill_rect(std::vector<uint8_t>& rgb, int w, int h, int x0, int y0, int x1,
   }
 }
 
+// Built-in test chart: gray ramp, 25/50/75 % bands, colour patches, soft disc.
 void make_chart(int w, int h, std::vector<uint8_t>* rgb) {
   rgb->assign(static_cast<size_t>(w) * h * 3, 255);
   // Horizontal ramp.
@@ -191,6 +198,8 @@ void make_chart(int w, int h, std::vector<uint8_t>* rgb) {
 
 enum class Screen { kAtkinson, kClusteredDot45 };
 
+// `rgb` is actually BGR (BMP order). Converts to toner, dithers, then writes
+// a white-paper / black-toner BGR bitmap.
 void halftone_rgb(const std::vector<uint8_t>& rgb, int w, int h, Screen screen,
                   unsigned cell, std::vector<uint8_t>* paper_bgr) {
   paper_bgr->assign(static_cast<size_t>(w) * h * 3, 255);
@@ -223,6 +232,7 @@ void halftone_rgb(const std::vector<uint8_t>& rgb, int w, int h, Screen screen,
   }
 }
 
+// Concatenate `panels` left-to-right with a 16-pixel gutter (fill 230).
 void panels_side_by_side(const std::vector<const std::vector<uint8_t>*>& panels,
                          int w, int h, std::vector<uint8_t>* out, int* ow,
                          int* oh) {
@@ -240,6 +250,7 @@ void panels_side_by_side(const std::vector<const std::vector<uint8_t>*>& panels,
   }
 }
 
+// Convert `in` to BMP via macOS `sips`. Paths are single-quoted.
 bool sips_to_bmp(const char* in, const char* out) {
   std::string cmd = "sips -s format bmp --out ";
   cmd += "'";

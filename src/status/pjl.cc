@@ -1,5 +1,9 @@
 // Copyright (C) 2026 Rui Nelson
 // SPDX-License-Identifier: GPL-2.0-or-later
+//
+// PJL supply-query construction and INFO STATUS / PAGECOUNT / DRUMLIFE
+// parsing. Transport is status/usb_printer.cc (IOKit) or sister_app.cpp
+// (PAPPL device).
 
 #include "status/pjl.h"
 
@@ -14,6 +18,7 @@
 namespace sisterhl2030 {
 namespace {
 
+// ASCII uppercase, in place. DISPLAY matching is English-only and last resort.
 std::string upper_ascii(std::string s) {
   for (char& c : s) {
     c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -21,6 +26,7 @@ std::string upper_ascii(std::string s) {
   return s;
 }
 
+// Strip leading spaces/tabs and trailing whitespace including CR/LF.
 std::string trim(std::string s) {
   while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' ||
                         s.back() == '\n')) {
@@ -33,6 +39,8 @@ std::string trim(std::string s) {
   return s.substr(i);
 }
 
+// First `key=` integer in `text` whose preceding character is not
+// alphanumeric or `_`, so CODE= does not steal PAGECOUNT=.
 bool extract_int_field(const std::string& text, const char* key, int* out) {
   const std::string prefix = std::string(key) + "=";
   size_t pos = 0;
@@ -56,6 +64,7 @@ bool extract_int_field(const std::string& text, const char* key, int* out) {
   return false;
 }
 
+// First `key="…"` value, trimmed. Used for DISPLAY.
 bool extract_quoted(const std::string& text, const char* key, std::string* out) {
   const std::string prefix = std::string(key) + "=\"";
   const size_t pos = text.find(prefix);
@@ -71,6 +80,9 @@ bool extract_quoted(const std::string& text, const char* key, std::string* out) 
   return true;
 }
 
+// Toner from PJL CODE, with English DISPLAY as a last-resort fallback for
+// unmapped codes. Ready/sleep/warming and operator-intervention codes that
+// do not mention toner default to OK.
 TonerState toner_from_code_and_display(int code, const std::string& display) {
   switch (code) {
     case 10006:  // Toner Low (PJL informational)
@@ -113,6 +125,7 @@ TonerState toner_from_code_and_display(int code, const std::string& display) {
   return TonerState::unknown;
 }
 
+// Cover / jam / empty-tray / manual-wait flags from CODE, then DISPLAY.
 void classify_engine(int code, const std::string& display, PrinterStatus* st) {
   switch (code) {
     case 40021:  // Brother TRG example: DISPLAY="12 COVER OPEN"
@@ -154,6 +167,7 @@ void classify_engine(int code, const std::string& display, PrinterStatus* st) {
   }
 }
 
+// Three-state sensor → percent: OK=100, low=kTonerLowPercent, empty=0.
 int toner_percent_for(TonerState s) {
   switch (s) {
     case TonerState::ok:
