@@ -44,12 +44,12 @@ Everything else — quality modes, AirPrint, supply levels — is identical
 either way, and you can install the other one later if you change your
 mind; it just replaces the one already there.
 
-* **Newspaper style** — `InstallSisterDrivers(NewspaperStyle).pkg`. Dots are
+* **Newspaper style** — `InstallSisterDrivers.NewspaperStyle.pkg`. Dots are
   grouped into a crisp, evenly-spaced grid, the way a halftone photo looks
   in a printed newspaper. Better for documents, line art, small text, and
   color graphics: the pattern is clearer on this printer, at the cost of a
   coarser look on photos.
-* **Pencil style** — `InstallSisterDrivers(PencilStyle).pkg`. Dots are
+* **Pencil style** — `InstallSisterDrivers.PencilStyle.pkg`. Dots are
   scattered individually (a technique called Atkinson dithering, the one
   classic Mac graphics software used), giving a soft, sketchy texture like
   pencil shading. Smoother gradients on photos; softer edges on line art and
@@ -67,17 +67,17 @@ line art, text, or color graphics rather than photos.
 
 1. Go to the [Releases page](https://github.com/RuiNelson/SisterHL2030/releases)
    and download the latest set of installer packages, including whichever
-   one of `InstallSisterDrivers(NewspaperStyle).pkg` or
-   `InstallSisterDrivers(PencilStyle).pkg` matches the style you want (see
+   one of `InstallSisterDrivers.NewspaperStyle.pkg` or
+   `InstallSisterDrivers.PencilStyle.pkg` matches the style you want (see
    above).
 2. Plug the printer into your Mac with a USB cable and turn it on. The
    installer needs it connected so it can find the printer.
 3. If you still have Brother's official driver installed, double-click
    **`UninstallBrotherDrivers.pkg`** first and follow the prompts. The two
    drivers can't be installed side by side.
-4. Double-click the `InstallSisterDrivers(...).pkg` you picked and follow
-   the prompts. macOS will ask for your administrator password, which is
-   normal for anything that installs system software.
+4. Double-click the installer you picked and follow the prompts. macOS
+   will ask for your administrator password, which is normal for anything
+   that installs system software.
 
 The printer will now show up in System Settings → Printers & Scanners on
 this Mac, and you can print to it right away from here.

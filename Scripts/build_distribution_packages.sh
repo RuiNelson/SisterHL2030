@@ -1,9 +1,9 @@
 #!/bin/bash
 # Build the four signed .pkg installers in distrib/:
-#   InstallSisterDrivers(NewspaperStyle).pkg - native arm64 driver, AM45
-#                                              (clustered-dot) halftone
-#   InstallSisterDrivers(PencilStyle).pkg    - native arm64 driver, Atkinson
-#                                              (error-diffusion) halftone
+#   InstallSisterDrivers.NewspaperStyle.pkg - native arm64 driver, AM45
+#                                             (clustered-dot) halftone
+#   InstallSisterDrivers.PencilStyle.pkg    - native arm64 driver, Atkinson
+#                                             (error-diffusion) halftone
 #   UninstallSisterDrivers.pkg  - removes either one
 #   UninstallBrotherDrivers.pkg - removes the official Intel Brother package
 #
@@ -133,7 +133,9 @@ trap - EXIT
 # reinstall over the previous one rather than two receipts fighting over
 # the same paths.
 variant_screen=(AM45 ATKINSON)
-variant_suffix=("(NewspaperStyle)" "(PencilStyle)")
+# Dots, not parentheses: GitHub release assets rewrite "(Foo)" to ".Foo",
+# so these names have to match what the Releases page actually shows.
+variant_suffix=(".NewspaperStyle" ".PencilStyle")
 variant_title=("Sister HL-2030 — Newspaper Style (AM halftone)" "Sister HL-2030 — Pencil Style (Atkinson halftone)")
 variant_note=(
   "This build prints shaded areas with the <b>AM (Newspaper-style)</b> halftone screen: a crisp, evenly-spaced dot pattern, the way a newspaper photo looks up close."
