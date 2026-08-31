@@ -113,6 +113,47 @@ TonerState toner_from_code_and_display(int code, const std::string& display) {
   return TonerState::unknown;
 }
 
+void classify_engine(int code, const std::string& display, PrinterStatus* st) {
+  switch (code) {
+    case 40021:  // Brother TRG example: DISPLAY="12 COVER OPEN"
+      st->cover_open = true;
+      return;
+    case 40022:  // HP/Brother 40xxx table: paper jam
+      st->media_jam = true;
+      return;
+    default:
+      break;
+  }
+  // 11xxx = paper-source status (empty, switching). 41xxx = empty with
+  // nowhere else to pull from. Both suspend the job until someone loads
+  // paper. Sleep (40000) is in the 40xxx range and is not empty.
+  if ((code >= 11000 && code <= 11999) || (code >= 41000 && code <= 41999)) {
+    st->media_empty = true;
+    return;
+  }
+
+  // Same English-panel last resort as toner. CODE is the reliable signal.
+  const std::string d = upper_ascii(display);
+  if (d.find("COVER") != std::string::npos) {
+    st->cover_open = true;
+    return;
+  }
+  if (d.find("JAM") != std::string::npos) {
+    st->media_jam = true;
+    return;
+  }
+  if (d.find("NO PAPER") != std::string::npos ||
+      d.find("PAPER EMPTY") != std::string::npos ||
+      d.find("LOAD PAPER") != std::string::npos ||
+      d.find("TRAY EMPTY") != std::string::npos) {
+    if (d.find("MANUAL") != std::string::npos) {
+      st->media_needed = true;
+    } else {
+      st->media_empty = true;
+    }
+  }
+}
+
 int toner_percent_for(TonerState s) {
   switch (s) {
     case TonerState::ok:
@@ -188,6 +229,7 @@ PrinterStatus parse_pjl_status(const std::string& text) {
 
   if (st.have_status) {
     st.toner = toner_from_code_and_display(st.code, st.display);
+    classify_engine(st.code, st.display, &st);
   }
   st.toner_percent = toner_percent_for(st.toner);
   st.toner_low = st.toner == TonerState::low;
@@ -251,7 +293,8 @@ std::string ippeve_attr_lines(const PrinterStatus& st) {
      << "\n";
   os << "STATE: -toner-low,-toner-empty,-opc-life-almost-over,-opc-life-over,"
         "-marker-waste-full-report,-marker-waste-almost-full-report,"
-        "-marker-supply-low-warning\n";
+        "-marker-supply-low-warning,-cover-open,-media-jam,-media-empty,"
+        "-media-needed\n";
   if (st.toner_empty) {
     os << "STATE: +toner-empty\n";
   } else if (st.toner_low) {
@@ -261,6 +304,18 @@ std::string ippeve_attr_lines(const PrinterStatus& st) {
     os << "STATE: +opc-life-over\n";
   } else if (st.drum_low) {
     os << "STATE: +opc-life-almost-over\n";
+  }
+  if (st.cover_open) {
+    os << "STATE: +cover-open\n";
+  }
+  if (st.media_jam) {
+    os << "STATE: +media-jam\n";
+  }
+  if (st.media_empty) {
+    os << "STATE: +media-empty\n";
+  }
+  if (st.media_needed) {
+    os << "STATE: +media-needed\n";
   }
   return os.str();
 }

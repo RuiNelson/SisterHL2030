@@ -124,6 +124,9 @@ std::string pjl_paper(const cups_page_header2_t& h) {
   if (name == "EXECUTIVE" || name == "EXECTIVE") {
     return "EXECUTIVE";
   }
+  if (name == "FOLIO") {
+    return "FOLIO";
+  }
   if (name == "A4" || name == "A5" || name == "A6" || name == "B5" ||
       name == "B6" || name == "C5" || name == "DL") {
     return name;
@@ -301,6 +304,16 @@ int main(int argc, char* argv[]) {
     params.economode = params.resolution < 900;
     params.papersize = pjl_paper(header);
     params.mediatype = pjl_media(header.MediaType, header.cupsMediaType);
+    {
+      std::string tray = upper(option_value(options, "InputSlot"));
+      if (tray.empty()) {
+        tray = upper(option_value(options, "media-source"));
+      }
+      if (tray == "MANUAL" || tray == "MPTRAY" || tray == "BY-PASS-TRAY" ||
+          tray == "BYPASS") {
+        params.sourcetray = "MANUAL";
+      }
+    }
 
     const bool already_1bit =
         header.cupsBitsPerPixel == 1 && header.cupsNumColors <= 1;

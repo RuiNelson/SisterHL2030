@@ -30,6 +30,32 @@ void sanitize_job_name(std::string* name) {
 
 void pjl(FILE* out, const char* line) { fputs(line, out); }
 
+bool is_envelope(const PageParams& p) {
+  return p.mediatype == "ENVELOPES" || p.mediatype == "ENVTHICK" ||
+         p.mediatype == "ENVTHIN";
+}
+
+bool wants_manual(const PageParams& p) {
+  if (p.sourcetray == "MANUAL" || p.sourcetray == "MPTRAY") {
+    return true;
+  }
+  // Thick stock, labels and envelopes only feed from the manual slot
+  // on this printer. Sending them at tray 1 jams or does nothing.
+  return p.mediatype == "THICK" || p.mediatype == "THICK2" || is_envelope(p);
+}
+
+void write_tray(FILE* out, const PageParams& p) {
+  // Brother PCL paper source (HL-2070N column of the TRG, same family):
+  //   1 / 1001 = tray 1 (fixed). macOS rastertobrother2030 emits 1h1001H.
+  //   2 = manual feed slot.
+  //   3 = envelope from the manual slot.
+  if (wants_manual(p)) {
+    pjl(out, is_envelope(p) ? "\033&l3H" : "\033&l2H");
+  } else {
+    pjl(out, "\033&l1h1001H");
+  }
+}
+
 }  // namespace
 
 Job::Job(FILE* out, std::string job_name)
@@ -70,8 +96,7 @@ void Job::write_page_header() {
   pjl(out_, "@PJL SET PAGEPROTECT = AUTO\n");
   pjl(out_, "@PJL ENTER LANGUAGE = PCL\n");
   pjl(out_, "\033E");
-  // Tray 1 / plain, as emitted by rastertobrother2030.
-  pjl(out_, "\033&l1h1001H");
+  write_tray(out_, page_params_);
   fprintf(out_, "\033&l%dX", std::max(1, page_params_.copies));
 }
 

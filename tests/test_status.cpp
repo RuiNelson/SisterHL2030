@@ -54,6 +54,33 @@ int main() {
          "toner empty");
 
   st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=40021\r\nDISPLAY=\"12 COVER OPEN   \"\r\n"
+      "ONLINE=FALSE\r\n\x0c");
+  expect(st.cover_open && !st.media_jam && !st.media_empty, "cover open CODE");
+  expect(st.toner == TonerState::ok, "cover open is not toner empty");
+
+  st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=40022\r\nDISPLAY=\"PAPER JAM       \"\r\n"
+      "ONLINE=FALSE\r\n\x0c");
+  expect(st.media_jam && !st.cover_open, "paper jam CODE");
+
+  st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=41100\r\nDISPLAY=\"NO PAPER        \"\r\n"
+      "ONLINE=FALSE\r\n\x0c");
+  expect(st.media_empty && !st.media_jam, "tray empty 41xxx");
+
+  st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=30000\r\nDISPLAY=\"COVER OPEN      \"\r\n\x0c");
+  expect(st.cover_open, "unmapped code, display says cover");
+  st = parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=30000\r\nDISPLAY=\"NO PAPER FED MANUAL\"\r\n\x0c");
+  expect(st.media_needed && !st.media_empty, "manual slot waiting for a sheet");
+
+  st = parse_pjl_status(ready);
+  expect(!st.cover_open && !st.media_jam && !st.media_empty && !st.media_needed,
+         "ready has no engine intervention");
+
+  st = parse_pjl_status(
       "@PJL INFO STATUS\r\nCODE=10001\r\nDISPLAY=\"READY           \"\r\n\x0c"
       "@PJL INFO DRUMLIFE\r\nDRUMLIFE=12000\r\n\x0c");
   expect(st.drum_percent == 0 && st.drum_empty, "drum life end");
@@ -75,6 +102,13 @@ int main() {
   expect(attrs.find("wasteToner") == std::string::npos, "no fake waste toner");
   expect(attrs.find("ATTR: marker-levels=100,70\n") != std::string::npos,
          "marker-levels for the Supply Levels panel");
+  expect(attrs.find("-cover-open") != std::string::npos &&
+             attrs.find("+cover-open") == std::string::npos,
+         "ready clears cover-open");
+  const std::string jam_attrs = sisterhl2030::ippeve_attr_lines(parse_pjl_status(
+      "@PJL INFO STATUS\r\nCODE=40022\r\nDISPLAY=\"PAPER JAM       \"\r\n\x0c"));
+  expect(jam_attrs.find("STATE: +media-jam\n") != std::string::npos,
+         "jam publishes media-jam");
   const std::string unknown_attrs =
       sisterhl2030::ippeve_attr_lines(parse_pjl_status(""));
   expect(unknown_attrs.find("ATTR: marker-levels=-2,-2\n") != std::string::npos,

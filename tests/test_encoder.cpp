@@ -457,7 +457,7 @@ int main() {
     expect(contains(bytes, "@PJL SET ECONOMODE = OFF\n"), "economode off by default");
     expect(contains(bytes, "@PJL SET MEDIATYPE = REGULAR\n"), "media");
     expect(contains(bytes, "@PJL ENTER LANGUAGE = PCL\n"), "enter PCL");
-    expect(contains(bytes, "\033&l1h1001H"), "tray command");
+    expect(contains(bytes, "\033&l1h1001H"), "tray 1 command");
     expect(contains(bytes, "\033*b1030m"), "mode 1030");
     expect(contains(bytes, "1030M"), "leave mode 1030");
     expect(!contains(bytes, "@PJL JOB NAME="), "no JOB NAME");
@@ -532,6 +532,62 @@ int main() {
       expect(contains(bytes, "@PJL SET RESOLUTION = 600\n"),
              "HQ1200 still sets RESOLUTION 600");
     }
+  }
+
+  auto encode_params = [](const PageParams& p, const char* tmpl_base,
+                          std::vector<uint8_t>* out) {
+    char tmpl[64];
+    std::snprintf(tmpl, sizeof(tmpl), "%s", tmpl_base);
+    const int fd = mkstemp(tmpl);
+    expect(fd >= 0, "mkstemp tray");
+    FILE* f = fd >= 0 ? fdopen(fd, "w+b") : nullptr;
+    expect(f != nullptr, "fdopen tray");
+    if (!f) {
+      return;
+    }
+    int row = 0;
+    auto next = [&](std::vector<uint8_t>& buf) {
+      if (row >= 2) {
+        return false;
+      }
+      std::fill(buf.begin(), buf.end(), 0);
+      ++row;
+      return true;
+    };
+    {
+      Job job(f, "tray");
+      job.encode_page(p, 2, 8, next);
+    }
+    *out = slurp(f);
+    std::fclose(f);
+    std::remove(tmpl);
+  };
+
+  {
+    PageParams p;
+    p.sourcetray = "MANUAL";
+    std::vector<uint8_t> bytes;
+    encode_params(p, "/tmp/sisterhl2030-manual-XXXXXX", &bytes);
+    expect(contains(bytes, "\033&l2H"), "manual feed is ESC &l2H");
+    expect(!contains(bytes, "\033&l1h1001H"), "manual feed is not tray 1");
+  }
+
+  {
+    PageParams p;
+    p.mediatype = "ENVELOPES";
+    std::vector<uint8_t> bytes;
+    encode_params(p, "/tmp/sisterhl2030-env-XXXXXX", &bytes);
+    expect(contains(bytes, "\033&l3H"),
+           "envelope auto-selects manual envelope feed");
+    expect(!contains(bytes, "\033&l1h1001H"), "envelope is not tray 1");
+  }
+
+  {
+    PageParams p;
+    p.mediatype = "THICK";
+    std::vector<uint8_t> bytes;
+    encode_params(p, "/tmp/sisterhl2030-thick-XXXXXX", &bytes);
+    expect(contains(bytes, "\033&l2H"), "thick stock auto-selects manual feed");
   }
 
   {

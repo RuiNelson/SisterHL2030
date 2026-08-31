@@ -40,7 +40,7 @@ ESC %-12345X@PJL LF
 @PJL SET PAGEPROTECT = AUTO LF
 @PJL ENTER LANGUAGE = PCL LF
 ESC E                                    # PCL reset
-ESC & l 1 h 1001 H                       # tray 1 (macOS rastertobrother2030)
+ESC & l 1 h 1001 H                       # tray 1 / fixed (see paper source)
 ESC & l <copies> X
 ESC * b 1 0 3 0 m                        # enter compression mode 1030
   …bands…
@@ -103,8 +103,29 @@ From `paperinf` (width × height in pixels at 600 dpi):
 | Com-10 | 2475 | 5700 |
 | Monarch | 2325 | 4500 |
 
-Sister advertises A4, Letter, Legal, Com-10 and DL over IPP; any other
-PWG size is sent as `PAPER = A4`.
+Sister advertises the cassette sizes plus the two envelopes that have
+names in `paperinf`:
+
+A4, Letter, Legal, Executive, Folio, A5, A6, B5 (ISO and JIS), B6,
+Com-10, DL. Anything else is sent as `PAPER = A4`. JIS B5 has no
+separate `paperinf` row, so it is sent as `B5`.
+
+### Paper source (PCL)
+
+The macOS `rastertobrother2030` tray-1 job emits `ESC & l 1 h 1001 H`
+(paper source 1, then Brother "fixed tray" 1001). Sister keeps that for
+the cassette. Manual feed and envelopes follow the HL-2070N column of
+Brother's PCL technical reference (same family as the HL-2030):
+
+| Source | Command |
+| --- | --- |
+| Tray 1 (default) | `ESC & l 1 h 1001 H` |
+| Manual feed slot | `ESC & l 2 H` |
+| Envelope from the manual slot | `ESC & l 3 H` |
+
+`sourcetray = MANUAL` (IPP `manual` / `by-pass-tray`) selects the slot.
+Thick stock (`THICK` / `THICK2`) and envelopes also select it even if
+the job asked for tray 1 — those media cannot feed from the cassette.
 
 At 300 dpi, dimensions are halved; at 1200 they are doubled — and
 `RAS1200MODE` with a 600 dpi bitmap prints at half size, so the doubled
@@ -261,14 +282,27 @@ Confirmed on `04f9:0027` / serial `B9J561723` / firmware `Ver1.29`:
 | `INFO CONSUMABLE` / `INFO TONER` / `DINQUIRE TONERLOW` | `"?"` (unsupported) |
 
 `CODE=10001` is ready, `CODE=40000` is sleep. Toner low is `CODE=10006`
-(and `40038` when the panel wants Go); empty is `CODE=40010`. `DISPLAY`
-is the front-panel string and follows the printer's own language setting,
-so Sister keys off `CODE` and only reads `DISPLAY` as a fallback for
-codes it does not map. The cartridge sensor is **not** a continuous
-percentage: Sister maps OK → 100, low → 15, empty → 0. Drum remaining is
-`round(100 × (12000 − DRUMLIFE) / 12000)` (rated life from the
-service/user manuals); `CODE=40129` forces empty, `CODE=40130` clamps to
-low.
+(and `40038` when the panel wants Go); empty is `CODE=40010`. Engine
+intervention, from the same `INFO STATUS` block:
+
+| `CODE` | Sister sets |
+| --- | --- |
+| `40021` | cover open (Brother TRG example: `DISPLAY="12 COVER OPEN"`) |
+| `40022` | media jam |
+| `11000`–`11999` | media empty (paper-source status) |
+| `41000`–`41999` | media empty (no other tray to pull from) |
+
+`DISPLAY` is the front-panel string and follows the printer's own language
+setting, so Sister keys off `CODE` and only reads `DISPLAY` as a fallback
+for codes it does not map (English `COVER` / `JAM` / `NO PAPER`; a
+manual-slot wait becomes `media-needed` rather than empty). These flags
+go to `papplPrinterSetReasons()` so the print dialog can show a jam or
+an open cover instead of a job that sits there.
+
+The cartridge sensor is **not** a continuous percentage: Sister maps OK → 100,
+low → 15, empty → 0. Drum remaining is `round(100 × (12000 − DRUMLIFE) /
+12000)` (rated life from the service/user manuals); `CODE=40129` forces
+empty, `CODE=40130` clamps to low.
 
 `status_cb` hands the two levels to `papplPrinterSetSupplies()`. PAPPL
 derives both `printer-supply` and the classic `marker-levels` /

@@ -86,9 +86,23 @@ std::string pjl_paper(const char* pwg_size) {
   const std::string s = pwg_size ? pwg_size : "";
   if (s.find("na_letter") == 0) return "LETTER";
   if (s.find("na_legal") == 0) return "LEGAL";
+  if (s.find("na_executive") == 0) return "EXECUTIVE";
+  if (s.find("na_folio") == 0) return "FOLIO";
   if (s.find("na_number-10") == 0) return "COM10";
   if (s.find("iso_dl") == 0) return "DL";
+  if (s.find("iso_a5") == 0) return "A5";
+  if (s.find("iso_a6") == 0) return "A6";
+  if (s.find("iso_b5") == 0 || s.find("jis_b5") == 0) return "B5";
+  if (s.find("iso_b6") == 0) return "B6";
   return "A4";
+}
+
+std::string pjl_tray(const char* source) {
+  const std::string s = source ? source : "";
+  if (s == "manual" || s == "by-pass-tray" || s == "manual-feed") {
+    return "MANUAL";
+  }
+  return "TRAY1";
 }
 
 std::string pjl_mediatype(const char* pwg_type) {
@@ -276,6 +290,7 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
   state->params.copies = options->copies > 0 ? options->copies : 1;
   state->params.papersize = pjl_paper(options->media.size_name);
   state->params.mediatype = pjl_mediatype(options->media.type);
+  state->params.sourcetray = pjl_tray(options->media.source);
 
   // 0 = paper white; rwriteline fills in the real toner values.
   state->lines_seen = 0;
@@ -591,22 +606,50 @@ bool status_cb(pappl_printer_t* printer) {
   } else if (st.drum_low) {
     add |= PAPPL_PREASON_MARKER_SUPPLY_LOW;
   }
+  if (st.cover_open) {
+    add |= PAPPL_PREASON_COVER_OPEN;
+  }
+  if (st.media_jam) {
+    add |= PAPPL_PREASON_MEDIA_JAM;
+  }
+  if (st.media_empty) {
+    add |= PAPPL_PREASON_MEDIA_EMPTY;
+  }
+  if (st.media_needed) {
+    add |= PAPPL_PREASON_MEDIA_NEEDED;
+  }
   const unsigned clear = PAPPL_PREASON_TONER_LOW | PAPPL_PREASON_TONER_EMPTY |
                          PAPPL_PREASON_MARKER_SUPPLY_LOW |
-                         PAPPL_PREASON_MARKER_SUPPLY_EMPTY;
+                         PAPPL_PREASON_MARKER_SUPPLY_EMPTY |
+                         PAPPL_PREASON_COVER_OPEN | PAPPL_PREASON_MEDIA_JAM |
+                         PAPPL_PREASON_MEDIA_EMPTY | PAPPL_PREASON_MEDIA_NEEDED;
   papplPrinterSetReasons(printer, static_cast<pappl_preason_t>(add),
                          static_cast<pappl_preason_t>(clear & ~add));
 
   papplLogPrinter(printer, PAPPL_LOGLEVEL_DEBUG,
-                  "Toner %d%%, drum %d%% (page count %d).", supplies[0].level,
-                  supplies[1].level, st.pagecount);
+                  "CODE=%d toner %d%%, drum %d%% (page count %d)%s%s%s%s.",
+                  st.code, supplies[0].level, supplies[1].level, st.pagecount,
+                  st.cover_open ? " cover-open" : "",
+                  st.media_jam ? " media-jam" : "",
+                  st.media_empty ? " media-empty" : "",
+                  st.media_needed ? " media-needed" : "");
   return true;
 }
 
 // A4 first: this printer is sold with A4 trays in the region it targets.
 const char* const kMedia[] = {
-    "iso_a4_210x297mm", "na_letter_8.5x11in", "na_legal_8.5x14in",
-    "na_number-10_4.125x9.5in", "iso_dl_110x220mm",
+    "iso_a4_210x297mm",
+    "na_letter_8.5x11in",
+    "na_legal_8.5x14in",
+    "na_executive_7.25x10.5in",
+    "na_folio_8.5x13in",
+    "iso_a5_148x210mm",
+    "iso_a6_105x148mm",
+    "iso_b5_176x250mm",
+    "jis_b5_182x257mm",
+    "iso_b6_125x176mm",
+    "na_number-10_4.125x9.5in",
+    "iso_dl_110x220mm",
 };
 
 bool driver_cb(pappl_system_t* system, const char* driver_name,
@@ -700,10 +743,9 @@ bool driver_cb(pappl_system_t* system, const char* driver_name,
   driver_data->num_media = static_cast<int>(sizeof(kMedia) / sizeof(kMedia[0]));
   std::memcpy(const_cast<char**>(driver_data->media), kMedia, sizeof(kMedia));
 
-  driver_data->num_source = 3;
+  driver_data->num_source = 2;
   driver_data->source[0] = "main";
   driver_data->source[1] = "manual";
-  driver_data->source[2] = "by-pass-tray";
 
   driver_data->num_type = 6;
   driver_data->type[0] = "stationery";

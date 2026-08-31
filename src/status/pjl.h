@@ -38,6 +38,12 @@ struct PrinterStatus {
   bool toner_empty = false;
   bool drum_low = false;
   bool drum_empty = false;
+
+  // Engine intervention: cover, jam, empty tray. Independent of toner.
+  bool cover_open = false;
+  bool media_jam = false;
+  bool media_empty = false;
+  bool media_needed = false;  // waiting for a sheet in the manual slot
 };
 
 // One PJL query, wrapped in UELs, ready to write to the printer.

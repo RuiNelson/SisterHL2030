@@ -199,6 +199,7 @@ wire format was recovered.
 | Model | Brother HL-2030 series |
 | USB | Vendor `0x04f9`, product `0x0027` |
 | Connection | USB only (no network/Wi-Fi support) |
+| Paper | A4, Letter, Legal, Executive, Folio, A5, A6, B5, B6; Com-10 and DL from the manual slot |
 | Resolutions | 300, 600, and 1200×600 (Fine) dpi |
 | Duplex | Not supported |
 
