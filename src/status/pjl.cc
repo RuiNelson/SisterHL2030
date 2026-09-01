@@ -59,7 +59,10 @@ bool extract_int_field(const std::string& text, const char* key, int* out) {
       *out = static_cast<int>(v);
       return true;
     }
-    break;
+    // No digits after this `=`. Step over the occurrence and keep looking:
+    // the text is several commands' replies concatenated, so one truncated
+    // or garbled field must not hide a well-formed one further down.
+    pos += prefix.size();
   }
   return false;
 }
