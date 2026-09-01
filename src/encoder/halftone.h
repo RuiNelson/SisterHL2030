@@ -241,8 +241,11 @@ float boundary_density(const DotTransfer& dt, float c);
 // highlight and shadow -- folding it into the model means the requested tone
 // survives while the scattered-dot texture stays exactly as it was.
 //
-// Computed once per process by actually dithering flat patches, so it can
-// never drift away from what `atkinson()` and `clustered_dot_45()` do.
+// `cell` is meaningful only for the clustered screen; a dispersed one has no
+// cell and ignores it, so any `cell` gives the same table there.
+//
+// Computed once per thread per screen by actually dithering flat patches, so
+// it can never drift away from what `atkinson()` and `clustered_dot_45()` do.
 const std::vector<uint8_t>& screen_response(bool clustered, unsigned cell);
 
 // The engine's contrast gain: 1 means it reproduces patterns faithfully,

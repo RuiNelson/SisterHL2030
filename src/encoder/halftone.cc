@@ -321,7 +321,13 @@ const std::vector<uint8_t>& screen_response(bool clustered, unsigned cell) {
   // asking for the other screen must not invalidate it.
   static thread_local std::map<std::pair<bool, unsigned>, std::vector<uint8_t>>
       cache;
-  const auto key = std::make_pair(clustered, cell);
+  // `cell` is part of the key only for the clustered screen. A dispersed
+  // screen has no cell and `atkinson()` never sees the argument, so every
+  // `cell` would otherwise buy its own bit-identical copy of the table --
+  // and each copy costs 256 dithered 128x128 patches to build. Callers do
+  // differ: `engine_transfer()` clamps kAtkinsonScreen's 0 up to 1, the tests
+  // pass 4.
+  const auto key = std::make_pair(clustered, clustered ? cell : 0u);
   const auto it = cache.find(key);
   if (it != cache.end()) {
     return it->second;
