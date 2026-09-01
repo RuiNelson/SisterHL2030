@@ -84,16 +84,40 @@ bool read_bmp_bgr(const char* path, int* w, int* h, std::vector<uint8_t>* bgr) {
     std::fclose(f);
     return false;
   }
-  auto u16 = [&](int o) { return static_cast<int>(hdr[o] | (hdr[o + 1] << 8)); };
+  // BMP header words are little-endian and unsigned, so assemble them in
+  // uint32_t. The bytes promote to `int`, and hdr[o + 3] << 24 then shifts
+  // into the sign bit of a signed type, which is undefined behaviour in C++17
+  // for any header whose top byte is >= 0x80.
+  auto u16 = [&](int o) {
+    return static_cast<uint16_t>(hdr[o] | (hdr[o + 1] << 8));
+  };
   auto u32 = [&](int o) {
-    return hdr[o] | (hdr[o + 1] << 8) | (hdr[o + 2] << 16) | (hdr[o + 3] << 24);
+    return static_cast<uint32_t>(hdr[o]) |
+           (static_cast<uint32_t>(hdr[o + 1]) << 8) |
+           (static_cast<uint32_t>(hdr[o + 2]) << 16) |
+           (static_cast<uint32_t>(hdr[o + 3]) << 24);
+  };
+  // BITMAPINFOHEADER width and height are signed, and a negative height is
+  // meaningful: it marks a top-down BMP, which sips does produce. Reinterpret
+  // the unsigned word as two's complement by hand rather than narrowing with
+  // a cast, which is implementation-defined before C++20.
+  auto i32 = [&](int o) {
+    const uint32_t v = u32(o);
+    return v <= 0x7fffffffu ? static_cast<int32_t>(v)
+                            : -static_cast<int32_t>(~v) - 1;
   };
   const int bits = u16(28);
   const uint32_t off = u32(10);
-  int32_t width = static_cast<int32_t>(u32(18));
-  int32_t height = static_cast<int32_t>(u32(22));
+  int32_t width = i32(18);
+  int32_t height = i32(22);
   bool flip = false;
   if (height < 0) {
+    // Negating INT32_MIN overflows, and no BMP is that tall: reject it here
+    // rather than let the same signed overflow back in through the door.
+    if (height == INT32_MIN) {
+      std::fclose(f);
+      return false;
+    }
     height = -height;
     flip = true;
   }
