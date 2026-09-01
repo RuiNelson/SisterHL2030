@@ -50,8 +50,8 @@ if [[ -n "$sister_old" ]]; then
   echo "$sister_old"
   echo
   echo "You do not need to remove it by hand. This program ${c_bold}replaces it${c_reset}:"
-  echo "it deletes the PPD, installs the IPP Everywhere service, and points the"
-  echo "same queue at it."
+  echo "it deletes the PPD, installs the printer application, and points the"
+  echo "same queue at it as an AirPrint printer."
 else
   echo "No previous SisterHL2030 install."
 fi
@@ -184,9 +184,12 @@ if [[ "$ipp_ready" -ne 1 ]]; then
 fi
 
 echo "Creating the CUPS queue…"
-# IPP Everywhere so System Settings lists it, then the PPD is rewritten
-# with Apple's Quality mapping (Normal = 600 dpi, not 300). The privileged
-# installer already ran this; running it again is idempotent.
+# An AirPrint queue against the printer application, built from Apple's own
+# ipp2ppd, then rewritten with the Quality mapping we want (Normal = 600 dpi,
+# not 300). An IPP Everywhere queue would list in System Settings but has no
+# Quality control on Tahoe, so it is only the fallback when ipp2ppd is
+# missing. The privileged installer already ran this; running it again is
+# idempotent.
 if [[ ! -f "/etc/cups/ppd/${queue}.ppd" ]] ||
    ! grep -q 'cupsInteger1 4 /HWResolution\[600 600\]' \
         "/etc/cups/ppd/${queue}.ppd" 2>/dev/null; then
@@ -242,7 +245,7 @@ echo
 echo "Print dialog modes, under ${c_bold}Quality${c_reset}:"
 echo "  • Draft  — 300 dpi, toner saving"
 echo "  • Normal — 600 dpi, toner saving (default)"
-echo "  • Best   — HQ1200, full toner (Brother's fine mode)"
+echo "  • Fine   — HQ1200, full toner (Brother's fine mode)"
 echo
 echo "Supply levels: System Settings → Printers & Scanners"
 echo "→ Brother HL-2030 series → Options & Supplies → Supply Levels."
