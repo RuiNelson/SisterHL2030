@@ -257,10 +257,24 @@ void pack_1bit_row(const cups_page_header2_t& h, const unsigned char* src,
   dst.assign(out_bpl, 0);
   const unsigned n = std::min(h.cupsBytesPerLine, out_bpl);
   std::memcpy(dst.data(), src, n);
-  if (h.cupsColorSpace == CUPS_CSPACE_W || h.cupsColorSpace == CUPS_CSPACE_SW) {
+  // The same three white-is-one spaces the PAPPL app inverts in
+  // `line_to_toner`; the two paths have to agree on what a set bit means.
+  if (h.cupsColorSpace == CUPS_CSPACE_W || h.cupsColorSpace == CUPS_CSPACE_SW ||
+      h.cupsColorSpace == CUPS_CSPACE_WHITE) {
     for (unsigned i = 0; i < n; ++i) {
       dst[i] = static_cast<uint8_t>(~dst[i]);
     }
+  }
+  // The tail of the last byte is padding, not pixels, and inverting it turned
+  // white padding into up to seven black dots printed past the right edge of
+  // every line. The engine's imageable widths are exactly the widths that are
+  // not a multiple of 8 -- A4 is 4661 px at 600 dpi -- so this is the normal
+  // case, not a corner one. Carry bits for x < width only, which is the
+  // convention `pack_toner_row` packs to.
+  const unsigned tail = width % 8;
+  if (tail != 0 && out_bpl != 0) {
+    dst[out_bpl - 1] =
+        static_cast<uint8_t>(dst[out_bpl - 1] & (0xFF << (8 - tail)));
   }
 }
 
