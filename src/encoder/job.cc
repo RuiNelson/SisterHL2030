@@ -128,6 +128,20 @@ void Job::encode_page(const PageParams& params, int height, int bytes_per_line,
   Block block;
 
   if (!next_line(line)) {
+    // A page with no rows still owns its page break. `pages_` is already
+    // counted and the header may already be out, so bailing without a form
+    // feed leaves the sheet unejected -- and if the next page's PageParams
+    // match, no new header is written either and the two pages silently merge
+    // onto one sheet. Eject, then leave.
+    //
+    // No `\033*b1030m` / `1030M` around it: mode 1030 exists to carry bands
+    // (docs/protocol.md, "Compression mode 1030") and there are none here, and
+    // the job envelope in that document only ever shows the pair wrapped round
+    // real raster data. Skipping it also keeps the non-empty path's bytes
+    // exactly as they were -- the escape is still written after the first line
+    // is packed, never before.
+    fputc('\f', out_);
+    fflush(out_);
     return;
   }
   block.add_line(encode_line(line));
