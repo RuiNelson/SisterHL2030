@@ -13,10 +13,10 @@
 #include <IOKit/usb/IOUSBLib.h>
 #include <IOKit/usb/USB.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <sys/time.h>
 #include <unistd.h>
 
 namespace sisterhl2030 {
@@ -44,14 +44,18 @@ constexpr int kDrainMaxReads = 40;
 constexpr int kDrainEmptyRetries = 8;
 constexpr useconds_t kDrainRetryUs = 50000;
 
-// collect_in slices the wait into this many milliseconds per ReadPipeTO.
+// collect_in's pause after a read that came back empty, so an idle pipe does
+// not spin. It is not part of the budget below -- that is wall clock.
 constexpr int kCollectSliceMs = 50;
-constexpr useconds_t kCollectSliceUs = 50000;
+constexpr useconds_t kCollectSliceUs = kCollectSliceMs * 1000;
 
-// How long to wait after a single INFO command, and after each command of
-// a supplies query. The HL-2030's reply to command N often arrives after
-// N+1 is sent, so the last ECHO exists to shake DRUMLIFE loose; a short
-// extra collect then picks up any tail.
+// Wall-clock budget for one collect_in: after a single INFO command, and
+// after each command of a supplies query. The HL-2030's reply to command N
+// often arrives after N+1 is sent, so the last ECHO exists to shake DRUMLIFE
+// loose; a short extra collect then picks up any tail. These are what the
+// device is held for, so the whole supplies query is at most four times
+// kSupplyCommandWaitMs plus the tail -- and much less than that in practice,
+// because collect_in returns as soon as the reply is complete.
 constexpr int kSingleCommandWaitMs = 800;
 constexpr int kSupplyCommandWaitMs = 700;
 constexpr int kSupplyTailWaitMs = 200;
@@ -336,11 +340,36 @@ bool write_pjl(Opened* o, const std::string& command, std::string* error) {
                     static_cast<uint32_t>(payload.size()), error);
 }
 
-// Append whatever the printer sends for ~wait_ms. HL-2030 PJL readback is
-// lagged: the reply to command N often arrives after command N+1 is sent.
-void collect_in(Opened* o, std::string* acc, int wait_ms) {
-  const int slices = std::max(1, wait_ms / kCollectSliceMs);
-  for (int i = 0; i < slices; ++i) {
+// Milliseconds since `start`. The collect loop budgets on the wall clock
+// because the device is held for exactly as long as it runs.
+long elapsed_ms(const timeval& start) {
+  timeval now;
+  gettimeofday(&now, nullptr);
+  return (now.tv_sec - start.tv_sec) * 1000 +
+         (now.tv_usec - start.tv_usec) / 1000;
+}
+
+// Append whatever the printer sends for up to wait_ms. HL-2030 PJL readback
+// is lagged: the reply to command N often arrives after command N+1 is sent.
+//
+// The bound is the clock, not a count of slices. Every pass costs a
+// kPipeReadTimeoutMs read *plus* the pause, so slicing wait_ms by the pause
+// alone overshot by 40 %: 700 ms of budget held the device for ~980 ms and
+// the four supply commands came to four seconds instead of the 2.4 the
+// constants promise. Only a read already in flight can carry us past the
+// deadline now, so the overshoot is one read timeout at most.
+//
+// `stop_when_complete` returns the moment the accumulated reply satisfies
+// pjl_response_complete(), which is the whole reason the budget is rarely
+// spent. Pass it only where that predicate means something: the supplies
+// query tests it on the very next line, while pjl_query() collects the answer
+// to one arbitrary command, for which CODE= and DRUMLIFE= are no sentinel at
+// all -- it has to wait out its budget.
+void collect_in(Opened* o, std::string* acc, int wait_ms,
+                bool stop_when_complete = false) {
+  timeval start;
+  gettimeofday(&start, nullptr);
+  while (elapsed_ms(start) < wait_ms) {
     uint8_t buf[256];
     UInt32 n = sizeof(buf);
     const IOReturn kr =
@@ -348,7 +377,13 @@ void collect_in(Opened* o, std::string* acc, int wait_ms) {
                                 kPipeReadTimeoutMs, kPipeReadTimeoutMs);
     if (kr == kIOReturnSuccess && n > 0) {
       acc->append(reinterpret_cast<char*>(buf), n);
+      if (stop_when_complete && response_complete(*acc)) {
+        return;
+      }
+      continue;  // more may be queued behind this block; read it now
     }
+    // An empty read has already spent its timeout; the pause only keeps a
+    // hard error from spinning until the deadline.
     usleep(kCollectSliceUs);
   }
 }
@@ -409,8 +444,10 @@ bool pjl_query_supplies(const std::string& want_serial, std::string* response,
       o.close();
       return false;
     }
-    collect_in(&o, response, kSupplyCommandWaitMs);
+    collect_in(&o, response, kSupplyCommandWaitMs, /*stop_when_complete=*/true);
     if (response_complete(*response)) {
+      // The tail collect deliberately does not stop early: the reply is
+      // already complete, and its job is to sweep up whatever follows.
       collect_in(&o, response, kSupplyTailWaitMs);
       o.close();
       return true;
