@@ -33,9 +33,13 @@ constexpr uint32_t kBulkWriteTimeoutMs = 2000;
 // hold the device; the loop spends the rest of its budget in usleep.
 constexpr uint32_t kPipeReadTimeoutMs = 20;
 
-// Drain: up to this many reads, with a 50 ms pause on the first eight
-// empty ones, then stop. Leftover from the previous open must be gone
-// before a new query is written.
+// Drain: stop once this many reads *in a row* come back empty, with a 50 ms
+// pause after each of them, and never do more than kDrainMaxReads reads in
+// total. Consecutive empties, not loop iterations: the reply to command N
+// often lands after N+1 is sent, so a burst of data followed by one empty
+// read is not an empty pipe, and counting iterations let a lagging block
+// survive the drain. Leftover from the previous open must be gone before a
+// new query is written.
 constexpr int kDrainMaxReads = 40;
 constexpr int kDrainEmptyRetries = 8;
 constexpr useconds_t kDrainRetryUs = 50000;
@@ -301,6 +305,7 @@ bool bulk_write(Opened* o, const uint8_t* data, uint32_t n, std::string* error) 
 
 // Drop whatever the last transaction left in the IN pipe.
 void drain_in(Opened* o) {
+  int empty_in_a_row = 0;
   for (int i = 0; i < kDrainMaxReads; ++i) {
     uint8_t buf[256];
     UInt32 n = sizeof(buf);
@@ -308,13 +313,13 @@ void drain_in(Opened* o) {
         (*o->iface)->ReadPipeTO(o->iface, o->in_pipe, buf, &n,
                                 kPipeReadTimeoutMs, kPipeReadTimeoutMs);
     if (kr == kIOReturnSuccess && n > 0) {
+      empty_in_a_row = 0;  // data now says nothing about what is still lagging
       continue;
     }
-    if (i < kDrainEmptyRetries) {
-      usleep(kDrainRetryUs);
-      continue;
+    if (++empty_in_a_row >= kDrainEmptyRetries) {
+      break;  // quiet for eight reads running: the pipe really is empty
     }
-    break;
+    usleep(kDrainRetryUs);
   }
 }
 
