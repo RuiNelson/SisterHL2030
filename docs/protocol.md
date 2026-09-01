@@ -79,10 +79,14 @@ The shipping PAPPL path only emits a subset, from the IPP `media-type`:
 
 | IPP `media-type` | `@PJL SET MEDIATYPE` |
 | --- | --- |
-| stationery (default), auto, other | `REGULAR` |
-| cardstock, labels, stationery-letterhead | `THICK` |
+| stationery (default), stationery-letterhead, auto, other | `REGULAR` |
+| cardstock, labels | `THICK` |
 | transparency | `TRANSPARENCY` |
 | envelope | `ENVELOPES` |
+
+`THICK` forces the manual slot (see paper source below), so only media
+that genuinely cannot take the cassette path is mapped to it.
+Letterhead is ordinary-weight paper and stays `REGULAR`.
 
 ### Paper size at 600 dpi
 
@@ -152,6 +156,8 @@ Brother's PCL technical reference (same family as the HL-2030):
 `sourcetray = MANUAL` (IPP `manual` / `by-pass-tray`) selects the slot.
 Thick stock (`THICK` / `THICK2`) and envelopes also select it even if
 the job asked for tray 1 — those media cannot feed from the cassette.
+That is why the media-type table above maps only cardstock and labels to
+`THICK`: anything sent as thick stock loses the cassette.
 
 At 300 dpi, dimensions are halved; at 1200 they are doubled — and
 `RAS1200MODE` with a 600 dpi bitmap prints at half size, so the doubled

@@ -122,7 +122,13 @@ std::string pjl_mediatype(const char* pwg_type) {
   if (t == "cardstock") return "THICK";
   if (t == "transparency") return "TRANSPARENCY";
   if (t == "labels") return "THICK";
-  if (t == "stationery-letterhead") return "THICK";
+  // Letterhead is deliberately *not* THICK. Job::wants_manual treats THICK as
+  // manual-only (see "Paper source (PCL)" in docs/protocol.md), which is right
+  // for cardstock and labels -- those cannot feed from the cassette -- but
+  // letterhead is ordinary-weight paper, and mapping it to THICK made choosing
+  // "Letterhead" in the print dialog silently park the job waiting for a
+  // hand-fed sheet. It feeds from tray 1 exactly like plain stationery.
+  if (t == "stationery-letterhead") return "REGULAR";
   return "REGULAR";  // "stationery", "auto", "other"
 }
 
