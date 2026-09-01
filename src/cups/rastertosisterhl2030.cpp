@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -368,21 +369,14 @@ int main(int argc, char* argv[]) {
     unsigned out_h = header.cupsHeight;
     std::vector<uint8_t> page_bits;
 
-    if (already_1bit && !resampling) {
-      packed.resize((out_w + 7) / 8);
-      page_bits.resize(packed.size() * out_h);
-      for (unsigned y = 0; y < out_h; ++y) {
-        if (cupsRasterReadPixels(ras, raw_line.data(), header.cupsBytesPerLine) !=
-            header.cupsBytesPerLine) {
-          std::fprintf(stderr, "ERROR: short raster read\n");
-          cupsRasterClose(ras);
-          return 1;
-        }
-        pack_1bit_row(header, raw_line.data(), packed);
-        std::memcpy(page_bits.data() + static_cast<size_t>(y) * packed.size(),
-                    packed.data(), packed.size());
-      }
-    } else {
+    // Every page goes through the toner buffer, 1-bit rasters included. A
+    // 1-bit page that needs no resample could be packed straight across, but
+    // then there is nowhere to crop it to the imageable area, and that crop is
+    // not optional (see below). Going the long way costs nothing and changes
+    // nothing: the row becomes toner 0/255, no resample runs, neither the
+    // dither nor the re-threshold runs, and `pack_toner_row`'s >= 128 test
+    // maps 255 back to 1 and 0 back to 0.
+    {
       std::vector<uint8_t> toner(static_cast<size_t>(out_w) * out_h);
       std::vector<uint8_t> row_toner;
       long toner_sum = 0;
@@ -415,6 +409,37 @@ int main(int argc, char* argv[]) {
         sisterhl2030::resample_to_grid(toner, out_w, out_h, raster_dpi, grid);
         std::fprintf(stderr, "INFO: resampled to the %dx%d dpi grid, %ux%u\n",
                      grid.dpi_x, grid.dpi_y, out_w, out_h);
+      }
+      // Then down to what the engine can actually paint, in the same place
+      // `rendpage` does it. The driver claims 0.01 mm margins so the print
+      // dialog cannot scale-to-fit, and the price is that CUPS rasterises the
+      // whole sheet; the surplus overruns the band decoder's line buffer and
+      // comes back as blank scanlines. See crop_to_imageable in
+      // encoder/halftone.h.
+      {
+        // The crop wants hundredths of a millimetre and the header carries
+        // points. cupsPageSize is the precise one -- A4 is 595.276 pt, which
+        // is the 21000 the PAPPL app passes, while rounding PageSize's whole
+        // 595 pt would crop two pixels away from it.
+        const double pt_w = header.cupsPageSize[0] != 0.0f
+                                ? static_cast<double>(header.cupsPageSize[0])
+                                : static_cast<double>(header.PageSize[0]);
+        const double pt_h = header.cupsPageSize[1] != 0.0f
+                                ? static_cast<double>(header.cupsPageSize[1])
+                                : static_cast<double>(header.PageSize[1]);
+        const int sheet_w = static_cast<int>(std::lround(pt_w * 2540.0 / 72.0));
+        const int sheet_h = static_cast<int>(std::lround(pt_h * 2540.0 / 72.0));
+        const unsigned sheet_pixels_w = out_w;
+        const unsigned sheet_pixels_h = out_h;
+        sisterhl2030::crop_to_imageable(toner, out_w, out_h, sheet_w, sheet_h,
+                                        grid);
+        if (out_w != sheet_pixels_w || out_h != sheet_pixels_h) {
+          std::fprintf(stderr,
+                       "INFO: cropped the %ux%u sheet to the engine's "
+                       "imageable area, %ux%u (%u bytes/line, was %u)\n",
+                       sheet_pixels_w, sheet_pixels_h, out_w, out_h,
+                       (out_w + 7) / 8, (sheet_pixels_w + 7) / 8);
+        }
       }
       if (!already_1bit || resampling) {
         if (!already_1bit) {
