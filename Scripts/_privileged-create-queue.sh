@@ -138,11 +138,26 @@ PY
 
 # Register as an AirPrint PPD, not IPP Everywhere. Tahoe only draws the
 # Quality control from APPrinterPreset on an AirPrint queue.
+#
+# lpadmin -P is what installs $PPD, applying its own defaults as it writes.
+# Copying $tmp over the result afterwards would throw those away, so don't:
+# $tmp is only ever the input. And a failed lpadmin means there is no queue
+# at all -- report that instead of leaving a PPD behind for a queue that
+# does not exist.
+status=0
 /usr/sbin/lpadmin -p "$QUEUE" -v "$URI" -P "$tmp" -E \
   -D "Brother HL-2030 series" -L "SisterHL2030" \
-  -o printer-is-shared=false || true
-cp "$tmp" "$PPD"
+  -o printer-is-shared=false || status=$?
 rm -f "$tmp"
+if [[ "$status" -ne 0 || ! -f "$PPD" ]]; then
+  echo "Could not create the CUPS queue (lpadmin exited $status)." >&2
+  exit 1
+fi
+
+# lpadmin writes $PPD itself, normally as root:_lp and mode 644, so these are
+# usually a no-op. They are kept because cupsd runs as _lp and must be able
+# to read the file whatever an earlier install or a hand-edited copy left
+# behind, and re-asserting costs nothing.
 chmod 644 "$PPD"
 chown root:_lp "$PPD" 2>/dev/null || true
 
