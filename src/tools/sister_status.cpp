@@ -142,6 +142,46 @@ bool publish_via_ipp_job(std::string* error) {
   return true;
 }
 
+// Escape `s` for use inside a JSON string. DISPLAY is copied verbatim off
+// the wire, so a quote or a backslash in the printer's panel text -- or a
+// stray control byte in a short read -- would otherwise emit a line no JSON
+// parser accepts. Bytes at 0x20 and above pass through unchanged, which keeps
+// a UTF-8 panel string UTF-8.
+std::string json_escape(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  for (const char ch : s) {
+    const unsigned char c = static_cast<unsigned char>(ch);
+    switch (c) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (c < 0x20) {
+          char esc[8];
+          std::snprintf(esc, sizeof(esc), "\\u%04x", c);
+          out += esc;
+        } else {
+          out += ch;
+        }
+        break;
+    }
+  }
+  return out;
+}
+
 // Plain-text toner/drum/page-count to stdout.
 void print_human(const sisterhl2030::PrinterStatus& st) {
   std::printf("PJL status: CODE=%d DISPLAY=\"%s\" ONLINE=%s\n", st.code,
@@ -251,7 +291,7 @@ int main(int argc, char** argv) {
       std::printf(
           "{\"code\":%d,\"display\":\"%s\",\"pagecount\":%d,\"drumlife\":%d,"
           "\"toner\":\"%s\",\"toner_percent\":%d,\"drum_percent\":%d}\n",
-          st.code, st.display.c_str(), st.pagecount, st.drumlife,
+          st.code, json_escape(st.display).c_str(), st.pagecount, st.drumlife,
           sisterhl2030::toner_state_label(st.toner), st.toner_percent,
           st.drum_percent);
       return 0;
