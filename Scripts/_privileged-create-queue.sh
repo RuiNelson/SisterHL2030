@@ -87,17 +87,6 @@ text = re.sub(
     '*cupsPrintQuality High/Fine: "<</cupsInteger1 5 /HWResolution[600 600]>>setpagedevice"',
     text)
 
-if "*pt_PT.Translation cupsPrintQuality" not in text:
-    text = text.replace(
-        "*CloseUI: *cupsPrintQuality\n",
-        '*pt_PT.Translation cupsPrintQuality/Qualidade: ""\n'
-        '*pt_PT.cupsPrintQuality Draft/Rascunho: ""\n'
-        '*pt_PT.cupsPrintQuality Normal/Normal: ""\n'
-        '*pt_PT.cupsPrintQuality High/Fino: ""\n'
-        "*CloseUI: *cupsPrintQuality\n",
-        1,
-    )
-
 slot = "main" if re.search(r'(?m)^\*InputSlot main:', text) else (
     "Main" if re.search(r'(?m)^\*InputSlot Main:', text) else None)
 if slot:
