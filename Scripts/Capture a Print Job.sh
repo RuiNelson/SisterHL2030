@@ -56,10 +56,32 @@ APP="$ROOT/build/sister-printer-app"
 [[ -f "$DAEMON_PLIST" ]] || die "SisterHL2030 does not look installed
 ($DAEMON_PLIST is missing)."
 
-# The queue whose jobs we want. Parsed by shape, not by lpstat's localized
-# prefix -- see _common.sh.
-QUEUE="$(LC_ALL=C lpstat -v 2>/dev/null |
-         sed -n 's/^[^:]* \([A-Za-z0-9_.-]*\): .*/\1/p' | head -1 || true)"
+# The queue whose jobs we want: the one whose device URI actually points at
+# this driver. Taking whatever queue lpstat happens to list first would send
+# you to another printer on this Mac and the capture would quietly get
+# nothing.
+#
+# lpstat is localized and LC_ALL=C does not change that on macOS, so parse by
+# shape, never by the prefix text: every line is "<prefix> NAME: URI". The
+# two URI tests are the ones remove_duplicate_sister_queues() in _common.sh
+# uses; "HL-2030._ipp" matches both _ipp._tcp and the _ipps._tcp TLS variant,
+# which is the one macOS discovers and adds first.
+QUEUE=""
+while IFS= read -r line; do
+  [[ "$line" == *": "* ]] || continue
+  uri="${line#*: }"
+  name="${line%%:*}"
+  name="${name##* }"
+  [[ -n "$name" ]] || continue
+  [[ "$uri" == *":8631"* || "$uri" == *"HL-2030._ipp"* ]] || continue
+  # Prefer the name the installer creates, whatever order lpstat lists in;
+  # any other matching queue will do if that one is not there.
+  if [[ "$name" == "$DEFAULT_QUEUE" ]]; then
+    QUEUE="$name"
+    break
+  fi
+  [[ -n "$QUEUE" ]] || QUEUE="$name"
+done < <(LC_ALL=C lpstat -v 2>/dev/null || true)
 if [[ -n "$QUEUE" ]]; then
   echo "Queue to print to:  ${c_bold}${QUEUE}${c_reset}"
 else
