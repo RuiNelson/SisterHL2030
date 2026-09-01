@@ -515,30 +515,52 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
   return true;
 }
 
+// True when `name` is the friendly Bonjour name we assert, or one of the
+// variants PAPPL derived from it after a name collision: dnssd.c renames to
+// "<name> (<hostname|serial|uuid>)" first and to "<name> (2)", "<name> (3)"
+// after that, so every derived form is kDnsSdName followed by " (".
+// Recognising those is what lets the name be asserted from a callback that
+// runs once a second without fighting PAPPL's collision handling.
+bool dns_sd_name_is_ours(const char* name) {
+  if (std::strcmp(name, kDnsSdName) == 0) return true;
+  const size_t len = std::strlen(kDnsSdName);
+  return std::strncmp(name, kDnsSdName, len) == 0 &&
+         std::strncmp(name + len, " (", 2) == 0;
+}
+
 // Read toner and drum over PJL and hand them to PAPPL. PAPPL calls this when
 // something asks for printer status, so it replaces the whole no-op-job dance
 // the ippeveprinter façade needed to get supply data in.
 bool status_cb(pappl_printer_t* printer) {
-  // Set the friendly Bonjour name once. status_cb runs about once a second;
-  // re-asserting the name every tick would fight PAPPL's own DNS-SD collision
-  // handling (dnssd.c), which renames the service if another device on the
-  // LAN already advertises "Brother HL-2030" -- forcing our name straight
-  // back would retrigger that same collision forever. driver_cb can't do
-  // this instead: it only gets a pappl_system_t*, not the pappl_printer_t*
-  // that papplPrinterSetDNSSDName needs, and runs before the printer exists.
-  static bool dns_sd_name_set = false;
-  if (!dns_sd_name_set) {
-    char dns_sd[128] = "";
-    papplPrinterGetDNSSDName(printer, dns_sd, sizeof(dns_sd));
-    if (std::strcmp(dns_sd, kDnsSdName) != 0) {
-      papplPrinterSetDNSSDName(printer, kDnsSdName);
-    }
+  // Set the friendly Bonjour name once per printer. status_cb runs about once
+  // a second; re-asserting the name every tick would fight PAPPL's own DNS-SD
+  // collision handling (dnssd.c), which renames the service if another device
+  // on the LAN already advertises "Brother HL-2030" -- forcing our name
+  // straight back would retrigger that same collision forever. driver_cb
+  // can't do this instead: it only gets a pappl_system_t*, not the
+  // pappl_printer_t* that papplPrinterSetDNSSDName needs, and runs before the
+  // printer exists.
+  //
+  // The guard is the printer's own name, not a `static bool`: a function-level
+  // static is per-process, and make_system() enables
+  // PAPPL_SOPTIONS_MULTI_QUEUE, so only the first printer to be polled ever
+  // got its name or its job limits and any second one silently kept PAPPL's
+  // defaults. Reading the name back is per-printer by construction and needs
+  // no bookkeeping to key on the pappl_printer_t*. dns_sd_name_is_ours()
+  // accepts the collision-renamed forms too, so a printer PAPPL has already
+  // renamed is left alone -- and once a printer is configured the steady-state
+  // poll makes no papplPrinterSet* call at all. The job limits ride along in
+  // the same block: PAPPL persists them beside the name in its state file, so
+  // a printer whose name is already ours has them already.
+  char dns_sd[128] = "";
+  papplPrinterGetDNSSDName(printer, dns_sd, sizeof(dns_sd));
+  if (!dns_sd_name_is_ours(dns_sd)) {
+    papplPrinterSetDNSSDName(printer, kDnsSdName);
     // One USB laser: no parallel jobs, and do not keep a hundred completed
     // IPP jobs in RAM after they have finished.
     papplPrinterSetMaxActiveJobs(printer, 1);
     papplPrinterSetMaxCompletedJobs(printer, 16);
     papplPrinterSetMaxPreservedJobs(printer, 0);
-    dns_sd_name_set = true;
   }
 
   if (papplPrinterGetState(printer) == IPP_PSTATE_PROCESSING) {
