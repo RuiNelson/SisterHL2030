@@ -77,6 +77,8 @@ struct JobState {
   unsigned height = 0;
   unsigned lines_seen = 0;  // rwriteline calls; compared to height in the log
   int raster_dpi = 600;     // dpi of the raster PAPPL handed over
+  int sheet_w = 0;          // media size, hundredths of a millimetre
+  int sheet_h = 0;          // ... used to crop to the engine's imageable box
 };
 
 // funopen(3) write callback: PAPPL device as a FILE* the encoder can fwrite.
@@ -306,6 +308,8 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
   state->params.papersize = pjl_paper(options->media.size_name);
   state->params.mediatype = pjl_mediatype(options->media.type);
   state->params.sourcetray = pjl_tray(options->media.source);
+  state->sheet_w = options->media.size_width;
+  state->sheet_h = options->media.size_length;
 
   // 0 = paper white; rwriteline fills in the real toner values.
   state->lines_seen = 0;
@@ -364,6 +368,24 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
                 grid.dpi_x, grid.dpi_y, width, height);
   }
 
+  // Then down to what the engine can actually paint. Sister advertises 0.01 mm
+  // margins so the dialog cannot scale-to-fit (driver_cb), so CUPS rasterises
+  // the whole sheet -- and the sheet is bigger than the imageable box by 38
+  // bytes on every line and 200 lines on every page. See crop_to_imageable in
+  // encoder/halftone.h for why sending those to the band decoder is what puts
+  // blank scanlines on paper.
+  const unsigned sheet_pixels_w = width;
+  const unsigned sheet_pixels_h = height;
+  sisterhl2030::crop_to_imageable(state->toner, width, height, state->sheet_w,
+                                  state->sheet_h, grid);
+  if (width != sheet_pixels_w || height != sheet_pixels_h) {
+    papplLogJob(job, PAPPL_LOGLEVEL_INFO,
+                "Cropped the %ux%u sheet to the engine's %ux%u imageable "
+                "area (%d bytes/line, was %d).", sheet_pixels_w,
+                sheet_pixels_h, width, height, static_cast<int>((width + 7) / 8),
+                static_cast<int>((sheet_pixels_w + 7) / 8));
+  }
+
   // Darkness is a model, not a set of measured per-mode multipliers: one
   // physical erosion length per screen drives every mode, and ECONOMODE is no
   // part of it. See "Engine dot transfer" and "Per-screen calibration" in
@@ -396,9 +418,12 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
               height, static_cast<unsigned>(midtones),
               static_cast<unsigned>(state->toner.size()),
               midtones ? "dithering" : "already 1-bit", kScreen.name);
+  // Against the raster PAPPL announced, not `height`: by here the page has
+  // been put on the device grid and cropped to the imageable box, so neither
+  // number is the count of rows the client was meant to send.
   papplLogJob(job, PAPPL_LOGLEVEL_INFO,
               "Received %u of %u raster lines.", state->lines_seen,
-              height);
+              state->height);
 
   if (kScreen.clustered) {
     sisterhl2030::clustered_dot_45(state->toner.data(), width, height,

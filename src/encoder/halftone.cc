@@ -220,6 +220,51 @@ void resample_to_grid(std::vector<uint8_t>& toner, unsigned& width,
   }
 }
 
+namespace {
+
+// Hundredths of a millimetre to device pixels, rounded to nearest.
+unsigned px_from_100mm(int value, int dpi) {
+  if (value <= 0 || dpi <= 0) {
+    return 0;
+  }
+  return static_cast<unsigned>(
+      std::lround(static_cast<double>(value) * dpi / 2540.0));
+}
+
+}  // namespace
+
+void crop_to_imageable(std::vector<uint8_t>& toner, unsigned& width,
+                       unsigned& height, int sheet_w, int sheet_h,
+                       const DeviceGrid& grid) {
+  if (width == 0 || height == 0) {
+    return;
+  }
+  const unsigned max_w =
+      px_from_100mm(sheet_w - 2 * kEngineMarginLeftRight, grid.dpi_x);
+  const unsigned max_h =
+      px_from_100mm(sheet_h - 2 * kEngineMarginTopBottom, grid.dpi_y);
+  // A zero limit means the caller had no media size to work from; leave the
+  // page alone rather than crop it to nothing.
+  const unsigned new_w = (max_w > 0 && width > max_w) ? max_w : width;
+  const unsigned new_h = (max_h > 0 && height > max_h) ? max_h : height;
+  if (new_w == width && new_h == height) {
+    return;
+  }
+  // Centred: Brother's imageable box is symmetric on both axes, so the
+  // margin to discard is the same at each edge and the content stays put.
+  const unsigned x0 = (width - new_w) / 2;
+  const unsigned y0 = (height - new_h) / 2;
+  std::vector<uint8_t> out(static_cast<size_t>(new_w) * new_h);
+  for (unsigned y = 0; y < new_h; ++y) {
+    const uint8_t* src =
+        toner.data() + static_cast<size_t>(y0 + y) * width + x0;
+    std::copy(src, src + new_w, out.data() + static_cast<size_t>(y) * new_w);
+  }
+  toner.swap(out);
+  width = new_w;
+  height = new_h;
+}
+
 float boundary_density(const DotTransfer& dt, float c) {
   c = std::clamp(c, 0.0f, 1.0f);
   const float w = std::max(dt.pixel_w_um, 1e-6f);

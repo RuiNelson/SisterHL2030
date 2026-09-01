@@ -134,6 +134,32 @@ DeviceGrid device_grid(int pjl_resolution);
 void resample_to_grid(std::vector<uint8_t>& toner, unsigned& width,
                       unsigned& height, int src_dpi, const DeviceGrid& grid);
 
+// The engine's unprintable margins, in hundredths of a millimetre. Brother's
+// own PPD declares the same box for every cassette size -- 18 pt left/right
+// and 12 pt top/bottom, symmetric on both axes (LinuxDrivers/
+// cupswrapperHL2030-2.0.1, `*ImageableArea`) -- and its driver never puts
+// more than that on the wire: captures/official-hello-letter-600.bin is
+// 6400 lines for Letter, which is 768 pt to the line.
+constexpr int kEngineMarginLeftRight = 635;  // 18 pt
+constexpr int kEngineMarginTopBottom = 423;  // 12 pt
+
+// Crop a full-sheet page down to that imageable box, in place and centred.
+// `sheet_w`/`sheet_h` are the media size in hundredths of a millimetre.
+//
+// Sister advertises 0.01 mm margins so the print dialog cannot decide to
+// scale-to-fit (see `driver_cb`), and the price is that CUPS rasterises the
+// WHOLE sheet: 5100x6600 for Letter against an engine that images 4800x6400,
+// 4960x7015 for A4 against 4658x6817. Those extra bytes overrun the band
+// decoder's line buffer and scanlines come back blank -- so the crop happens
+// here instead, before the halftone, and the wire carries only what the
+// engine can paint.
+//
+// A page already at or inside the box is left alone, so this is a no-op if
+// the raster ever starts arriving correctly sized.
+void crop_to_imageable(std::vector<uint8_t>& toner, unsigned& width,
+                       unsigned& height, int sheet_w, int sheet_h,
+                       const DeviceGrid& grid);
+
 // Physical size of one device pixel, in micrometres.
 inline float pixel_um(int dpi) { return 25400.0f / static_cast<float>(dpi); }
 

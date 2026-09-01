@@ -103,6 +103,32 @@ From `paperinf` (width × height in pixels at 600 dpi):
 | Com-10 | 2475 | 5700 |
 | Monarch | 2325 | 4500 |
 
+### Imageable area
+
+`paperinf` is the **sheet**, not what the engine paints. Brother's PPD
+declares the same unprintable box for every cassette size — 18 pt left and
+right, 12 pt top and bottom, symmetric on both axes
+(`LinuxDrivers/cupswrapperHL2030-2.0.1`, `*ImageableArea`) — and its driver
+never puts more than that on the wire:
+
+| Name | Sheet (pt) | ImageableArea (pt) | Raster at 600 dpi | Bytes/line |
+| --- | --- | --- | ---: | ---: |
+| Letter | 612 × 792 | `18 12 594 780` | 4800 × 6400 | 600 |
+| A4 | 595 × 842 | `18 12 577 830` | 4658 × 6817 | 583 |
+
+`captures/official-hello-letter-600.bin`, from the official macOS
+`rastertobrother2030`, decodes to exactly 6400 rows — 768 pt to the line.
+
+This matters because Sister advertises **0.01 mm** margins (see below), so
+CUPS rasterises the whole sheet: 5100 × 6600 for Letter, 4960 × 7015 for A4.
+That is 38 bytes too many on every line and 200 lines too many on every page.
+The band decoder has a line buffer sized from the box above, so the surplus
+overruns it and scanlines come back blank — the fault looks like a halftone
+or a lost-bytes bug and is neither. `crop_to_imageable`
+(`src/encoder/halftone.h`) cuts the page back to the box, centred, after the
+resample and before the halftone, so the wire only ever carries what the
+engine can paint.
+
 Sister advertises the cassette sizes plus the two envelopes that have
 names in `paperinf`:
 

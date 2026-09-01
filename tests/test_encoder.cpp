@@ -261,6 +261,52 @@ int main() {
       expect(w == 8 && h == 8, "a raster already on the grid is left alone");
     }
     {
+      // The engine images less than the sheet, and the sheet is what CUPS
+      // rasterises (Sister advertises 0.01 mm margins so the print dialog
+      // cannot scale-to-fit). Sending the extra bytes overruns the band
+      // decoder's line buffer and scanlines come back blank -- so these two
+      // sizes are the ones the wire has to carry, and they are Brother's own:
+      // its PPD's *ImageableArea is 18 pt left/right and 12 pt top/bottom,
+      // and captures/official-hello-letter-600.bin is 6400 lines for Letter.
+      using sisterhl2030::crop_to_imageable;
+      using sisterhl2030::device_grid;
+      const auto grid = device_grid(600);
+
+      unsigned w = 5100;  // US Letter at 600 dpi, whole sheet
+      unsigned h = 6600;
+      std::vector<uint8_t> page(static_cast<size_t>(w) * h, 0);
+      // Mark the centre so the crop can be shown to keep the content put.
+      page[static_cast<size_t>(h / 2) * w + w / 2] = 200;
+      crop_to_imageable(page, w, h, 21590, 27940, grid);
+      expect(w == 4800 && h == 6400,
+             "Letter crops to the engine's 4800x6400 imageable area");
+      expect((w + 7) / 8 == 600, "Letter goes out at 600 bytes per line");
+      expect(page.size() == static_cast<size_t>(w) * h,
+             "the cropped buffer is resized to match");
+      expect(page[static_cast<size_t>(h / 2) * w + w / 2] == 200,
+             "the crop is centred, so the middle of the page does not move");
+
+      w = 4960;  // A4 at 600 dpi, whole sheet
+      h = 7015;
+      page.assign(static_cast<size_t>(w) * h, 0);
+      crop_to_imageable(page, w, h, 21000, 29700, grid);
+      expect((w + 7) / 8 == 583,
+             "A4 goes out at 583 bytes per line, as captures/sister-a4.bin does");
+      expect(h == 6816, "A4 crops to 6816 lines");
+
+      // Already inside the box, and no media size at all: both are no-ops,
+      // so a correctly sized raster is never cropped twice.
+      w = 4800;
+      h = 6400;
+      page.assign(static_cast<size_t>(w) * h, 0);
+      crop_to_imageable(page, w, h, 21590, 27940, grid);
+      expect(w == 4800 && h == 6400,
+             "a page already at the imageable size is left alone");
+      crop_to_imageable(page, w, h, 0, 0, grid);
+      expect(w == 4800 && h == 6400,
+             "no media size means no crop, not a crop to nothing");
+    }
+    {
       // The darkness model. What matters is not the exact numbers -- those
       // move with kAtkinsonSuppressionUm -- but that the shape is right:
       // white, mid and solid are fixed points, the minority phase is pushed

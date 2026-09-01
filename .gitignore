@@ -31,3 +31,4 @@ distrib/*
 !distrib/resources-install/
 !distrib/resources-install/**
 !distrib/distribution-install.xml.in
+/Scripts/__pycache__

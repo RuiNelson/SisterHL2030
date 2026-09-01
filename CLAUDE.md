@@ -391,6 +391,21 @@ output is English whatever the user's locale is.
   margin reads as borderless and the print dialog then silently scale-to-fits
   at ~96%. `scaling_default` is `PAPPL_SCALING_NONE` for the same reason —
   together they are the README's "defaults to 100% scale".
+- **Those margins are a lie to the print dialog, so the raster must be cropped
+  before it goes out.** Claiming 0.01 mm makes CUPS rasterise the whole
+  *sheet* — 5100×6600 for Letter, 4960×7015 for A4 — while the engine images
+  4800×6400 and 4658×6817 (18 pt left/right, 12 pt top/bottom; see "Imageable
+  area" in `docs/protocol.md`). The surplus is 38 bytes on every line and 200
+  lines on every page, it overruns the band decoder's line buffer, and what
+  comes out is **blank scanlines** that look exactly like a halftone or a
+  short-write bug and are neither. `crop_to_imageable` in
+  `src/encoder/halftone.cc` cuts the page back, centred, between
+  `resample_to_grid` and the dither. Do not remove it without also giving the
+  driver real margins, and do not "simplify" it into a plain truncate — the
+  box is centred and a truncate shifts the whole page up and left.
+  Two captures pin the numbers: `captures/official-hello-letter-600.bin`
+  (Brother's own driver) is 6400 rows for Letter, and `captures/sister-a4.bin`
+  is 583 bytes/line × 6817 rows for A4.
 - No classic Sister PPD is shipped. The installer deletes copies left by
   earlier versions so CUPS cannot pick the legacy PPD path. Advertised
   attributes come from `driver_cb()` in `sister_app.cpp` — change them there.
