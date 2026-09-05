@@ -96,10 +96,6 @@ Once the driver is installed, the printer is plugged in, and this Mac is
 awake, other Macs, iPhones, and iPads on the same network see it as
 **Brother HL-2030** and can print to it with no extra software.
 
-Leave Printer Sharing off for this printer in System Settings. The driver
-already advertises AirPrint; sharing it from there as well can make jobs
-hang.
-
 ### Uninstalling
 
 Double-click **`UninstallSisterDrivers.pkg`** from the same release. It
@@ -110,16 +106,14 @@ removes the driver, its background service, and the printer queue.
 * **Native Apple Silicon**: no Rosetta 2, no emulation.
 * **AirPrint**: print from any Mac, iPhone, or iPad on the network, once
   the printer is connected to one Mac over USB and that Mac is awake.
-* **Correct scaling**: pages print at 100% by default (older setups on
-  Apple Silicon are prone to printing everything at half-size).
+* **Correct scaling**: pages print at 100% by default.
 * **Good-looking output**: a choice of two halftone styles for photos and
   shading, Newspaper or Pencil (see above), each tuned for this printer's
   resolutions.
 * **Toner and drum levels**: shown right in System Settings' Supply Levels
   panel, same as a modern printer.
 * **Three quality modes**: Draft (300 dpi), Normal (600 dpi), and Fine
-  (1200×600 dpi), each halftoned at its own resolution rather than rescaled
-  from another one.
+  (1200×600 dpi).
 
 ## How it works, briefly
 
