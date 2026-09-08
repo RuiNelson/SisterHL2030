@@ -171,6 +171,7 @@ the two uninstallers.
 To turn a bitmap into a HL-2030 job stream directly, without printing:
 
 ```sh
+python3 Scripts/make_test_pbm.py > page.pbm
 ./build/sister-rawtobr < page.pbm > job.bin
 ```
 

@@ -370,9 +370,15 @@ see what would land on paper without spending any. It round-trips
 `sister-rawtobr` output exactly, so its results are trustworthy.
 
 ```bash
+python3 Scripts/make_test_pbm.py > page.pbm   # 600 dpi A4 imageable area
 ./build/sister-rawtobr < page.pbm > job.prn
 python3 Scripts/decode_job.py job.prn out.pbm
 ```
+
+`make_test_pbm.py` writes the 4658x6817 `P4` page the encoder expects, so the
+round trip needs nothing else. The decoded header reads 4664 wide -- the
+packed line is 583 bytes and a decoder cannot know the last six bits were
+padding -- but the raster bytes come back identical.
 
 `mixed bytes` is the halftone signal: packed bytes that are neither `0x00` nor
 `0xFF`. A dithered photo runs ~90%; a page that lost its tone is near 0%.
