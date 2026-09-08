@@ -68,7 +68,7 @@ the screen selection might have changed — `Install Sister HL2030.sh` already
 does this; a fresh `build -B` directory doesn't need it.
 
 The driver version is `project(sisterhl2030 VERSION …)` in `CMakeLists.txt`
-plus the git sha (`0.9.5+abc1234def56`). Bump the CMake version when shipping
+plus the git sha (`1.0.0+abc1234def56`). Bump the CMake version when shipping
 a user-visible driver change. `sister-printer-app --version` prints the full
 string; PAPPL advertises the semver half as `printer-firmware-string-version`.
 `Scripts/Check Sister HL2030.sh` compares the build, the install, and the
@@ -76,8 +76,9 @@ running daemon.
 
 ## Releases
 
-Versioning is semver (`MAJOR.MINOR.PATCH`), pre-1.0 while the driver is in
-beta. To cut a release: bump `project(sisterhl2030 VERSION …)` in
+Versioning is semver (`MAJOR.MINOR.PATCH`). 1.0.0 ended the beta, so a
+change that breaks how an existing install is driven now costs a major bump
+rather than a minor one. To cut a release: bump `project(sisterhl2030 VERSION …)` in
 `CMakeLists.txt`, update this file if the example version string above is
 now stale, rebuild the four packages with
 `Scripts/build_distribution_packages.sh` (it compiles `sister-printer-app`
