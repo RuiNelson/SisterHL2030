@@ -389,8 +389,10 @@ is rejected by the server's device-type check, so socket is the way in.
 
 ## Iterating on an installed system
 
-After changing the encoder, filter, or IPP command script, rebuild then copy
-into the live install — no daemon restart needed, both are exec'd per job:
+After changing the encoder or the printer application, rebuild then copy into
+the live install. The daemon is long-lived and holds the USB device, so a new
+binary only takes effect once it comes back — which is why the script ends in
+`launchctl kickstart -k`:
 
 ```bash
 cmake --build build -j && sudo bash Scripts/_privileged-update-filter.sh "$PWD"
@@ -398,13 +400,22 @@ cmake --build build -j && sudo bash Scripts/_privileged-update-filter.sh "$PWD"
 
 macOS Tahoe kills an unsigned binary under `/Library/Printers` (`OS_REASON_CODESIGNING`). The privileged scripts ad-hoc sign after copy (`codesign --force --sign -`). Confirm with `Scripts/Check Sister HL2030.sh`.
 
-Changes to the `launchd/*.plist` files, or anything that must restart the
-daemon, need a reload:
+Changes to the `launchd/*.plist` files need the job **re-registered**, not just
+restarted, and that is the whole difference between the two scripts:
+update-filter kickstarts the job launchd already has, while restart-ipp copies
+the plist over and does `bootout` + `bootstrap` (then reloads cupsd):
 
 ```bash
 sudo bash Scripts/_privileged-restart-ipp.sh "$PWD"
 ```
 
+The `_privileged-` scripts all write under `/Library/Printers`, so running one
+by hand takes `sudo`, and most of them take an argument the caller normally
+supplies: `icon`, `restart-ipp` and `update-filter` want the repository root
+(`sudo bash Scripts/_privileged-update-filter.sh "$PWD"`) and answer
+`Internal use: … ROOT` with exit 2 without it; `install` wants
+`ROOT QUEUE USB_URI`; `create-queue` and `sister-uninstall` take a queue name
+that defaults to `Brother_HL_2030_series`; `uninstall` takes none.
 `Scripts/*.sh` without the `_privileged-` prefix are the novice-facing entry
 points (`Install Sister HL2030.sh`, `Uninstall Sister HL2030.sh`,
 `Uninstall Official Brother Drivers.sh`, `Preview Halftone.sh`,
