@@ -70,6 +70,24 @@ notarize_and_staple() {
   xcrun stapler staple "$pkg"
 }
 
+# Nothing in the payload may load a library from outside the OS. PAPPL needs
+# OpenSSL, libpng and libusb, and its pkg-config line points at whatever
+# package manager built them: linked as dylibs they become absolute
+# LC_LOAD_DYLIB paths into a Homebrew tree the user does not have, with no
+# rpath and no fallback, and the daemon then cannot start at all. CMakeLists.txt
+# links the static archives instead -- this is the check that it really did.
+assert_system_only() {
+  local bin="$1" strays
+  strays="$(otool -L "$bin" | tail -n +2 |
+            grep -vE '^[[:space:]]+(/usr/lib/|/System/Library/)' || true)"
+  if [ -n "$strays" ]; then
+    echo "$(basename "$bin") links libraries the user's Mac will not have:" >&2
+    echo "$strays" >&2
+    echo "The package would install a daemon that cannot launch. Aborting." >&2
+    exit 1
+  fi
+}
+
 if ! command -v cmake >/dev/null 2>&1; then
   echo "cmake not found. Install Xcode Command Line Tools and cmake first." >&2
   exit 1
@@ -92,6 +110,7 @@ mkdir -p "$PAYLOAD" "$LAUNCHD_DEST"
 cp "$ROOT/build/sister-status" "$PAYLOAD/sister-status"
 cp "$ROOT/Scripts/_privileged-create-queue.sh" "$PAYLOAD/.create-queue.sh"
 chmod 755 "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
+assert_system_only "$PAYLOAD/sister-status"
 
 echo "Signing sister-status for notarization…"
 codesign --force --options runtime --timestamp \
@@ -165,6 +184,7 @@ for i in "${!variant_screen[@]}"; do
 
   cp "$ROOT/build/sister-printer-app" "$PAYLOAD/sister-printer-app"
   chmod 755 "$PAYLOAD/sister-printer-app"
+  assert_system_only "$PAYLOAD/sister-printer-app"
   codesign --force --options runtime --timestamp \
     --sign "$APP_SIGN_ID" "$PAYLOAD/sister-printer-app"
 

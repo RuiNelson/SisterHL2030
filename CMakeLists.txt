@@ -219,6 +219,55 @@ if(SISTER_WITH_PAPPL)
   string(REPLACE "-framework AppKit" "" PAPPL_LINK_FLAGS "${PAPPL_LINK_FLAGS}")
   string(STRIP "${PAPPL_LINK_FLAGS}" PAPPL_LINK_FLAGS)
 
+  # PAPPL wants OpenSSL, libpng and libusb, and its pkg-config line points at
+  # wherever the build machine's package manager keeps them. Linked that way
+  # the binary carries absolute LC_LOAD_DYLIB paths into someone's Homebrew
+  # tree, with no rpath and no fallback -- so the shipped .pkg only runs on a
+  # Mac that has the same formulae installed, which is not a dependency an
+  # installer can have. The system OpenSSL cannot stand in either: macOS keeps
+  # LibreSSL inside the dyld shared cache only, with no file on disk, no SDK
+  # stub and no headers, so `ld` reports "library 'ssl' not found" and there is
+  # nothing to link against. PAPPL cannot drop it -- its configure takes
+  # --with-tls=gnutls|libressl|openssl and has no "none", even though the app
+  # passes PAPPL_SOPTIONS_NO_TLS and never serves https.
+  #
+  # So link the static archives, by absolute path, and let -dead_strip discard
+  # everything unreferenced. Everything left on the line is a system library.
+  # `Scripts/build_distribution_packages.sh` checks the result.
+  set(SISTER_STATIC_ARCHIVES "")
+  string(REGEX MATCHALL "-L[^ ]+" _sister_libdirs "${PAPPL_LINK_FLAGS}")
+  set(_sister_hints "")
+  foreach(_dir IN LISTS _sister_libdirs)
+    string(SUBSTRING "${_dir}" 2 -1 _dir)
+    list(APPEND _sister_hints "${_dir}")
+  endforeach()
+  foreach(_lib ssl crypto png16 usb-1.0)
+    string(MAKE_C_IDENTIFIER "${_lib}" _tag)
+    find_library(SISTER_STATIC_${_tag} NAMES lib${_lib}.a
+                 HINTS ${_sister_hints} NO_DEFAULT_PATH)
+    if(NOT SISTER_STATIC_${_tag})
+      message(FATAL_ERROR
+        "No static lib${_lib}.a beside the dylib PAPPL linked. The shipped "
+        "binary must not load it from a package manager prefix at runtime.")
+    endif()
+    list(APPEND SISTER_STATIC_ARCHIVES "${SISTER_STATIC_${_tag}}")
+    string(REPLACE "." "\\." _pat "${_lib}")
+    string(REGEX REPLACE "(^| )-l${_pat}($| )" " " PAPPL_LINK_FLAGS
+           "${PAPPL_LINK_FLAGS}")
+  endforeach()
+  # Every -L pointed at one of those prefixes or at PAPPL's own; the archives
+  # are absolute now, so only PAPPL's is still needed.
+  string(REGEX REPLACE "-L[^ ]+" "" PAPPL_LINK_FLAGS "${PAPPL_LINK_FLAGS}")
+  string(REGEX REPLACE " +" " " PAPPL_LINK_FLAGS "${PAPPL_LINK_FLAGS}")
+  string(STRIP "${PAPPL_LINK_FLAGS}" PAPPL_LINK_FLAGS)
+  string(REPLACE ";" " " _sister_archives_flags "${SISTER_STATIC_ARCHIVES}")
+  # What the archives need that the dylibs used to pull in for themselves:
+  # zlib and Security for OpenSSL, the Objective-C runtime for libusb.
+  set(PAPPL_LINK_FLAGS
+      "-L${PAPPL_PREFIX}/lib ${PAPPL_LINK_FLAGS} ${_sister_archives_flags} \
+-lz -lobjc -framework Security")
+  string(REGEX REPLACE "[ \n]+" " " PAPPL_LINK_FLAGS "${PAPPL_LINK_FLAGS}")
+
   add_executable(sister-printer-app
     src/pappl/sister_app.cpp
     ${SISTER_GENERATED_DIR}/version.h)

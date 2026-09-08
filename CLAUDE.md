@@ -36,6 +36,22 @@ Run one by name with `ctest --test-dir build -R status --output-on-failure`.
 `sister-status` and its `-framework IOKit` link are guarded by `if(APPLE)`; the
 encoder library, `sister-rawtobr`, and both tests build anywhere.
 
+**Nothing in an install may load a library from outside the OS.** PAPPL
+needs OpenSSL, libpng and libusb, and its pkg-config line points at whatever
+package manager built them; linked as dylibs those become absolute
+`LC_LOAD_DYLIB` paths into the *build machine's* Homebrew tree, with no rpath
+and no fallback, so the daemon cannot launch on a Mac that does not have the
+same formulae — which is every user's Mac. `CMakeLists.txt` therefore links
+the four **static archives** by absolute path and lets `-dead_strip` discard
+the rest (it costs ~500 KB of binary), and `assert_system_only` in
+`Scripts/build_distribution_packages.sh` refuses to package anything whose
+`otool -L` names a path outside `/usr/lib` or `/System/Library`. The system
+OpenSSL is not an option: macOS keeps LibreSSL inside the dyld shared cache
+only, with no file on disk, no SDK stub and no headers, so `ld` answers
+`library 'ssl' not found`. Nor can PAPPL drop it — its configure takes
+`--with-tls=gnutls|libressl|openssl` with no "none", even though the app
+passes `PAPPL_SOPTIONS_NO_TLS` and never serves https.
+
 `sister-printer-app` and `rastertosisterhl2030` print with whichever halftone
 screen `-DSISTER_HALFTONE_SCREEN=` selects at configure time: `ATKINSON`
 (default, unchanged shipping behaviour) or `AM45`, the clustered-dot 45°
