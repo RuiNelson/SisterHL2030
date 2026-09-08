@@ -194,6 +194,23 @@ python3 Scripts/_fake_printer.py 9199 --toner=low &
   The symptom points at the encoder and the encoder is innocent — check the
   wire first. `Scripts/Capture a Print Job.sh` gets the real job off a real
   app without paper; if its decode is clean, the fault is past the encoder.
+- **`free()` does not give a page buffer back, and
+  `malloc_zone_pressure_relief` does not either.** A contone page is ~35 MB at
+  600 dpi A4 and ~70 MB at HQ1200, and `resample_to_grid`/`crop_to_imageable`
+  hold two at once. libmalloc keeps blocks that size in its large cache, dirty
+  and resident: 135 MB freed measured 135 MB still resident afterwards,
+  against the null zone and the default zone alike. The daemon therefore sat
+  at 76 MB after one Normal page and 173 MB after an HQ1200 one, against ~4 MB
+  idle, for as long as it ran — and the `malloc_zone_pressure_relief(nullptr,
+  0)` in `rendjob` that was meant to prevent exactly that did nothing at all.
+  Allocate every page buffer with `make_page_buffer` and drop it with
+  `release_page_buffer` (`encoder/halftone.h`), never a plain
+  `std::vector<uint8_t> buf(n)`: they are a pair, `MADV_FREE_REUSABLE` on the
+  way out and `MADV_FREE_REUSE` on the way in. Both halves matter — skipping
+  the REUSE corrupts nothing, but the process then under-reports its own
+  footprint by a whole page buffer while it holds one, which is how this
+  stayed invisible. Measure with `footprint <pid>`, not `ps` RSS: the released
+  pages stay in RSS, clean and reclaimable, until the kernel wants them.
 - `papplMainloop`'s `footer_html` argument is **not** optional. Pass null and
   every web page segfaults the daemon inside `papplClientHTMLFooter`.
 - `papplLogJob` implements its own printf subset; `%zu` crashes it.

@@ -237,6 +237,35 @@ int main() {
              "HQ1200 halftones on a 1200x600 grid");
     }
     {
+      // The page-buffer pair. On macOS release_page_buffer madvises the block
+      // MADV_FREE_REUSABLE before freeing it and make_page_buffer madvises the
+      // next one MADV_FREE_REUSE before writing to it, so a buffer handed back
+      // out of libmalloc's large cache goes through both. Cycle it over the
+      // 1 MB threshold that arms the advice and check nothing is lost: a
+      // reused block still has to arrive fully zeroed and still has to hold
+      // what is written to it.
+      using sisterhl2030::make_page_buffer;
+      using sisterhl2030::release_page_buffer;
+      const size_t n = 4u << 20;
+      bool sized = true, zeroed = true, kept = true, emptied = true;
+      for (int pass = 0; pass < 3; ++pass) {
+        std::vector<uint8_t> page = make_page_buffer(n);
+        sized = sized && page.size() == n;
+        zeroed = zeroed && std::all_of(page.begin(), page.end(),
+                                       [](uint8_t v) { return v == 0; });
+        const uint8_t mark = static_cast<uint8_t>(pass + 1);
+        std::fill(page.begin(), page.end(), mark);
+        kept = kept && page.front() == mark && page[n / 2] == mark &&
+               page.back() == mark;
+        release_page_buffer(page);
+        emptied = emptied && page.empty() && page.capacity() == 0;
+      }
+      expect(sized, "make_page_buffer returns the requested size");
+      expect(zeroed, "a page buffer arrives zeroed, reused block or not");
+      expect(kept, "a page buffer holds what is written to it after reuse");
+      expect(emptied, "release_page_buffer leaves the vector empty");
+    }
+    {
       using sisterhl2030::resample_to_grid;
       unsigned w = 8;
       unsigned h = 8;

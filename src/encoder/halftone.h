@@ -160,6 +160,30 @@ void crop_to_imageable(std::vector<uint8_t>& toner, unsigned& width,
                        unsigned& height, int sheet_w, int sheet_h,
                        const DeviceGrid& grid);
 
+// Allocate a zeroed contone page buffer of `n` samples, and release one.
+//
+// Always as a pair, and never plain `std::vector<uint8_t> buf(n)` for a page:
+// on macOS `free()` does not give those pages back. A page is ~35 MB at 600
+// dpi A4 and twice that at HQ1200, and the resample and crop steps hold two
+// of them at once; libmalloc keeps blocks that size in its large cache, dirty
+// and resident, and `malloc_zone_pressure_relief()` does NOT flush it -- 135
+// MB freed stayed 135 MB against both the null zone and the default one.
+// Measured on the printer application, that left it holding 77 MB after one
+// Normal page and 173 MB after an HQ1200 one, against ~4 MB idle, for as long
+// as the daemon ran.
+//
+// `MADV_FREE_REUSABLE` does hand them back, at once and in full. It is the
+// mechanism libmalloc itself uses, and it comes as a pair: the matching
+// `MADV_FREE_REUSE` on the way in charges the pages to us again before
+// anything writes to them. Skipping it does not corrupt anything -- the
+// contents survive either way -- but the process then under-reports its own
+// footprint by a whole page buffer for as long as it holds one, which is how
+// this went unnoticed. Off macOS both are an ordinary allocate and free.
+std::vector<uint8_t> make_page_buffer(size_t n);
+
+// Give `buf`'s pages back to the OS and free it. `buf` is left empty.
+void release_page_buffer(std::vector<uint8_t>& buf);
+
 // Physical size of one device pixel, in micrometres.
 inline float pixel_um(int dpi) { return 25400.0f / static_cast<float>(dpi); }
 

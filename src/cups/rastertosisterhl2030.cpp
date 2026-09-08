@@ -377,7 +377,8 @@ int main(int argc, char* argv[]) {
     // dither nor the re-threshold runs, and `pack_toner_row`'s >= 128 test
     // maps 255 back to 1 and 0 back to 0.
     {
-      std::vector<uint8_t> toner(static_cast<size_t>(out_w) * out_h);
+      std::vector<uint8_t> toner =
+          sisterhl2030::make_page_buffer(static_cast<size_t>(out_w) * out_h);
       std::vector<uint8_t> row_toner;
       long toner_sum = 0;
       for (unsigned y = 0; y < header.cupsHeight; ++y) {
@@ -483,6 +484,10 @@ int main(int argc, char* argv[]) {
         std::memcpy(page_bits.data() + static_cast<size_t>(y) * packed.size(),
                     packed.data(), packed.size());
       }
+      // The bits are in page_bits now; the contone page is ~35 MB at 600 dpi
+      // and the next page reallocates. See make_page_buffer in
+      // encoder/halftone.h -- letting it fall out of scope does not return it.
+      sisterhl2030::release_page_buffer(toner);
     }
 
     // HQ1200's bitmap is twice the 600 dpi page vertically as well, but the

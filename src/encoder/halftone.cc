@@ -16,10 +16,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <utility>
 #include <vector>
+
+#ifdef __APPLE__
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 namespace sisterhl2030 {
 namespace {
@@ -109,13 +115,58 @@ void pack_toner_row(const uint8_t* toner_row, unsigned width, uint8_t* packed) {
   }
 }
 
+namespace {
+
+#ifdef __APPLE__
+// Below this a buffer is not worth a syscall. Only whole pages are advised:
+// a partial page at either end can be shared with another allocation.
+constexpr size_t kAdviseMinBytes = 1u << 20;
+
+// Best effort -- a range libmalloc did not hand out from its large allocator
+// just fails, and the buffer stays an ordinary allocation.
+void advise_pages(void* base, size_t bytes, int how) {
+  if (base == nullptr || bytes < kAdviseMinBytes) {
+    return;
+  }
+  const auto page = static_cast<uintptr_t>(getpagesize());
+  const auto begin = reinterpret_cast<uintptr_t>(base);
+  const uintptr_t first = (begin + page - 1) & ~(page - 1);
+  const uintptr_t last = (begin + bytes) & ~(page - 1);
+  if (last > first) {
+    madvise(reinterpret_cast<void*>(first), static_cast<size_t>(last - first),
+            how);
+  }
+}
+#endif
+
+}  // namespace
+
+std::vector<uint8_t> make_page_buffer(size_t n) {
+  std::vector<uint8_t> buf;
+  buf.reserve(n);
+#ifdef __APPLE__
+  // Before the fill, not after: libmalloc may hand this block back from the
+  // large cache still marked reusable, and the zeroing is already a write.
+  advise_pages(buf.data(), n, MADV_FREE_REUSE);
+#endif
+  buf.assign(n, 0);
+  return buf;
+}
+
+void release_page_buffer(std::vector<uint8_t>& buf) {
+#ifdef __APPLE__
+  advise_pages(buf.data(), buf.size(), MADV_FREE_REUSABLE);
+#endif
+  std::vector<uint8_t>().swap(buf);
+}
+
 void nn_upsample_2x_x(std::vector<uint8_t>& toner, unsigned& width,
                       unsigned height) {
   if (width == 0 || height == 0) {
     return;
   }
   const unsigned nw = width * 2;
-  std::vector<uint8_t> out(static_cast<size_t>(nw) * height);
+  std::vector<uint8_t> out = make_page_buffer(static_cast<size_t>(nw) * height);
   for (unsigned y = 0; y < height; ++y) {
     const uint8_t* src = toner.data() + static_cast<size_t>(y) * width;
     uint8_t* dst = out.data() + static_cast<size_t>(y) * nw;
@@ -124,6 +175,7 @@ void nn_upsample_2x_x(std::vector<uint8_t>& toner, unsigned& width,
     }
   }
   toner.swap(out);
+  release_page_buffer(out);  // after the swap this is the old page
   width = nw;
 }
 
@@ -135,7 +187,7 @@ void halve_y(std::vector<uint8_t>& toner, unsigned width, unsigned& height) {
     return;
   }
   const unsigned nh = height / 2;
-  std::vector<uint8_t> out(static_cast<size_t>(width) * nh);
+  std::vector<uint8_t> out = make_page_buffer(static_cast<size_t>(width) * nh);
   for (unsigned y = 0; y < nh; ++y) {
     const uint8_t* a = toner.data() + static_cast<size_t>(2 * y) * width;
     const uint8_t* b = a + width;
@@ -145,6 +197,7 @@ void halve_y(std::vector<uint8_t>& toner, unsigned width, unsigned& height) {
     }
   }
   toner.swap(out);
+  release_page_buffer(out);  // after the swap this is the old page
   height = nh;
 }
 
@@ -154,7 +207,7 @@ void halve_x(std::vector<uint8_t>& toner, unsigned& width, unsigned height) {
     return;
   }
   const unsigned nw = width / 2;
-  std::vector<uint8_t> out(static_cast<size_t>(nw) * height);
+  std::vector<uint8_t> out = make_page_buffer(static_cast<size_t>(nw) * height);
   for (unsigned y = 0; y < height; ++y) {
     const uint8_t* src = toner.data() + static_cast<size_t>(y) * width;
     uint8_t* dst = out.data() + static_cast<size_t>(y) * nw;
@@ -164,6 +217,7 @@ void halve_x(std::vector<uint8_t>& toner, unsigned& width, unsigned height) {
     }
   }
   toner.swap(out);
+  release_page_buffer(out);  // after the swap this is the old page
   width = nw;
 }
 
@@ -173,7 +227,7 @@ void double_y(std::vector<uint8_t>& toner, unsigned width, unsigned& height) {
     return;
   }
   const unsigned nh = height * 2;
-  std::vector<uint8_t> out(static_cast<size_t>(width) * nh);
+  std::vector<uint8_t> out = make_page_buffer(static_cast<size_t>(width) * nh);
   for (unsigned y = 0; y < height; ++y) {
     const uint8_t* src = toner.data() + static_cast<size_t>(y) * width;
     uint8_t* dst = out.data() + static_cast<size_t>(2 * y) * width;
@@ -181,6 +235,7 @@ void double_y(std::vector<uint8_t>& toner, unsigned width, unsigned& height) {
     std::copy(src, src + width, dst + width);
   }
   toner.swap(out);
+  release_page_buffer(out);  // after the swap this is the old page
   height = nh;
 }
 
@@ -254,13 +309,15 @@ void crop_to_imageable(std::vector<uint8_t>& toner, unsigned& width,
   // margin to discard is the same at each edge and the content stays put.
   const unsigned x0 = (width - new_w) / 2;
   const unsigned y0 = (height - new_h) / 2;
-  std::vector<uint8_t> out(static_cast<size_t>(new_w) * new_h);
+  std::vector<uint8_t> out =
+      make_page_buffer(static_cast<size_t>(new_w) * new_h);
   for (unsigned y = 0; y < new_h; ++y) {
     const uint8_t* src =
         toner.data() + static_cast<size_t>(y0 + y) * width + x0;
     std::copy(src, src + new_w, out.data() + static_cast<size_t>(y) * new_w);
   }
   toner.swap(out);
+  release_page_buffer(out);  // after the swap this is the old page
   width = new_w;
   height = new_h;
 }

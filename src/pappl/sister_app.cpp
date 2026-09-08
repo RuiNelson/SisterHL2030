@@ -25,9 +25,6 @@
 #include <string>
 #include <vector>
 
-#ifdef __APPLE__
-#include <malloc/malloc.h>
-#endif
 
 #include "encoder/halftone.h"
 #include "encoder/job.h"
@@ -326,7 +323,8 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
               options->header.cupsBytesPerLine,
               options->header.cupsBitsPerPixel,
               static_cast<int>(options->print_quality), state->raster_dpi);
-  state->toner.assign(static_cast<size_t>(state->width) * state->height, 0);
+  state->toner = sisterhl2030::make_page_buffer(
+      static_cast<size_t>(state->width) * state->height);
   return true;
 }
 
@@ -480,9 +478,10 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   fflush(state->stream);
   // Drop the page buffer now: HQ1200's 1200x600 A4 toner is ~70 MB, and the
   // next rstartpage reallocates. Leaving it until rendjob keeps that RAM
-  // for the rest of the job and for idle if the client stalls.
-  state->toner.clear();
-  state->toner.shrink_to_fit();
+  // for the rest of the job and for idle if the client stalls. clear() and
+  // shrink_to_fit() are not enough on their own -- see make_page_buffer in
+  // encoder/halftone.h for why free() does not get the pages back.
+  sisterhl2030::release_page_buffer(state->toner);
   return true;
 }
 
@@ -505,13 +504,14 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
     fclose(state->stream);
   }
   papplDeviceFlush(device);
+  // Normally rendpage already released this; a job abandoned between
+  // rstartpage and rendpage did not. malloc_zone_pressure_relief() used to
+  // stand here instead and does nothing at all -- 135 MB freed measured 135
+  // MB still resident afterwards, against both the null zone and the default
+  // one. See make_page_buffer in encoder/halftone.h.
+  sisterhl2030::release_page_buffer(state->toner);
   papplJobSetData(job, nullptr);
   delete state;
-#ifdef __APPLE__
-  // After a page the malloc zone still holds the 8-bit toner arena.
-  // Hand it back so idle RSS is idle RSS.
-  malloc_zone_pressure_relief(nullptr, 0);
-#endif
   return true;
 }
 
