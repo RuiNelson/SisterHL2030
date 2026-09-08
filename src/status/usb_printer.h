@@ -19,13 +19,6 @@ constexpr uint16_t kBrotherVid = 0x04f9;
 // HL-2030 product ID (the whole 2030 series on this VID).
 constexpr uint16_t kHl2030Pid = 0x0027;
 
-// Open the matching printer-class device, write `commands_crlf` as one PJL
-// command, and collect the reply. `want_serial` empty means the first
-// 04f9:0027 on the bus. Returns false on open/write failure or an empty
-// reply; `error` then holds a short English reason.
-bool pjl_query(const std::string& want_serial, const std::string& commands_crlf,
-               std::string* response, std::string* error);
-
 // INFO STATUS + PAGECOUNT + DRUMLIFE + ECHO in one transaction. Drains the
 // IN pipe first so a leftover reply from the last open is not parsed as
 // this one. Stops as soon as pjl_response_complete() is true.

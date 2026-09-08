@@ -4,15 +4,12 @@
 // Query HL-2030 toner/drum over USB PJL and publish IPP printer-supply.
 
 #include <fcntl.h>
-#include <sys/file.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
-#include <iterator>
 #include <string>
 
 #include "status/pjl.h"
@@ -21,65 +18,9 @@
 
 namespace {
 
-// Leftover from the retired ippeveprinter façade: serialise USB access
-// against the CUPS usb backend. Harmless if the file is missing — UsbLock
-// then falls back to /tmp.
-constexpr const char* kLockPath = "/Library/Printers/SisterHL2030/usb.lock";
-// Optional usb:// URI whose serial= query selects the device. Empty file
-// means the first HL-2030 on the bus.
-constexpr const char* kUriPath = "/Library/Printers/SisterHL2030/device-uri";
 // Dummy document for the --publish IPP job (the job name is .sister-status,
 // so the app prints nothing; the file only has to exist and be readable).
 constexpr const char* kDummyDoc = "/Library/Printers/SisterHL2030/icon.png";
-
-// Whole file, trailing whitespace stripped. Empty on open failure.
-std::string read_file(const char* path) {
-  std::ifstream in(path);
-  if (!in) {
-    return {};
-  }
-  std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ' ||
-                        s.back() == '\t')) {
-    s.pop_back();
-  }
-  return s;
-}
-
-// Advisory flock on kLockPath (or /tmp fallback). `skip` is set when the
-// caller already holds the lock (SISTER_USB_LOCKED).
-class UsbLock {
- public:
-  UsbLock(bool wait, bool skip) {
-    if (skip) {
-      return;
-    }
-    fd_ = open(kLockPath, O_RDWR | O_CREAT, 0644);
-    if (fd_ < 0) {
-      fd_ = open("/tmp/sisterhl2030-usb.lock", O_RDWR | O_CREAT, 0644);
-    }
-    if (fd_ < 0) {
-      return;
-    }
-    if (flock(fd_, wait ? LOCK_EX : LOCK_EX | LOCK_NB) != 0) {
-      close(fd_);
-      fd_ = -1;
-      busy_ = true;
-    }
-  }
-  ~UsbLock() {
-    if (fd_ >= 0) {
-      flock(fd_, LOCK_UN);
-      close(fd_);
-    }
-  }
-  bool ok() const { return fd_ >= 0; }
-  bool busy() const { return busy_; }
-
- private:
-  int fd_ = -1;
-  bool busy_ = false;
-};
 
 // Submit a no-op Print-Job named .sister-status so CUPS copies marker-levels.
 bool publish_via_ipp_job(std::string* error) {
@@ -207,14 +148,11 @@ void print_human(const sisterhl2030::PrinterStatus& st) {
   std::printf("\n");
 }
 
-// --ipp is the retired façade's ATTR:/STATE: format; --publish is the
-// CUPS marker-levels refresh the installer still uses.
 void usage() {
   std::fprintf(stderr,
-               "usage: sister-status [--json|--ipp|--publish [--loop]]\n"
+               "usage: sister-status [--json|--publish [--loop]]\n"
                "  (no flags)   plain text\n"
                "  --json       one JSON line\n"
-               "  --ipp        ATTR:/STATE: on stderr for ippeveprinter\n"
                "  --publish    no-op IPP job that refreshes printer-supply\n"
                "  --loop       with --publish, repeat every 180s\n");
 }
@@ -222,14 +160,12 @@ void usage() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  enum class Mode { human, json, ipp, publish } mode = Mode::human;
+  enum class Mode { human, json, publish } mode = Mode::human;
   bool loop = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--json") {
       mode = Mode::json;
-    } else if (a == "--ipp") {
-      mode = Mode::ipp;
     } else if (a == "--publish") {
       mode = Mode::publish;
     } else if (a == "--loop") {
@@ -260,25 +196,19 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool already_locked = std::getenv("SISTER_USB_LOCKED") != nullptr;
-  UsbLock lock(true, already_locked);
-  if (lock.busy()) {
-    std::fprintf(stderr, "ERROR: HL-2030 USB is busy\n");
-    return 1;
-  }
-
-  const std::string serial = sisterhl2030::serial_from_device_uri(read_file(kUriPath));
+  // Empty serial: the first 04f9:0027 on the bus. The retired façade picked
+  // one out of a device-uri file that nothing writes any more.
   std::string raw;
   std::string err;
-  if (!sisterhl2030::pjl_query_supplies(serial, &raw, &err)) {
-    // mode == Mode::publish already returned above; only human/json/ipp reach here.
+  if (!sisterhl2030::pjl_query_supplies(std::string(), &raw, &err)) {
+    // mode == Mode::publish already returned above; only human/json reach here.
     std::fprintf(stderr, "ERROR: %s\n", err.c_str());
     return 1;
   }
 
   const sisterhl2030::PrinterStatus st = sisterhl2030::parse_pjl_status(raw);
   if (!st.have_status && !st.have_drumlife && !st.have_pagecount) {
-    // mode == Mode::publish already returned above; only human/json/ipp reach here.
+    // mode == Mode::publish already returned above; only human/json reach here.
     std::fprintf(stderr, "ERROR: empty PJL response\n");
     return 1;
   }
@@ -294,9 +224,6 @@ int main(int argc, char** argv) {
           st.code, json_escape(st.display).c_str(), st.pagecount, st.drumlife,
           sisterhl2030::toner_state_label(st.toner), st.toner_percent,
           st.drum_percent);
-      return 0;
-    case Mode::ipp:
-      std::fputs(sisterhl2030::ippeve_attr_lines(st).c_str(), stdout);
       return 0;
     case Mode::publish:
       return 0;

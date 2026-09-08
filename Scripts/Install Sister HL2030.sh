@@ -145,9 +145,9 @@ if [[ -n "$uri" ]]; then
   echo "  $uri"
 else
   echo "${c_yellow}No HL-2030 on USB right now.${c_reset}"
-  echo "The IPP service will still be installed. Connect the printer,"
-  echo "write the USB URI to /Library/Printers/SisterHL2030/device-uri"
-  echo "and add the printer in System Settings."
+  echo "The printer application will still be installed. Connect the"
+  echo "printer and add it in System Settings -- the application finds"
+  echo "it on the bus by itself."
 fi
 echo
 echo "${c_yellow}You will be asked for this Mac's administrator password.${c_reset}"

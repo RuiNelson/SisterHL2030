@@ -97,30 +97,24 @@ int main() {
       "@PJL INFO STATUS\r\nCODE=30000\r\nDISPLAY=\"TONER EMPTY     \"\r\n\x0c");
   expect(st.toner == TonerState::empty, "unmapped code, display says empty");
 
-  const std::string attrs = sisterhl2030::ippeve_attr_lines(parse_pjl_status(ready));
-  expect(attrs.find("type=toner") != std::string::npos, "supply toner");
-  expect(attrs.find("type=opc") != std::string::npos, "supply opc");
-  expect(attrs.find("wasteToner") == std::string::npos, "no fake waste toner");
-  expect(attrs.find("ATTR: marker-levels=100,70\n") != std::string::npos,
-         "marker-levels for the Supply Levels panel");
-  expect(attrs.find("-cover-open") != std::string::npos &&
-             attrs.find("+cover-open") == std::string::npos,
-         "ready clears cover-open");
-  const std::string jam_attrs = sisterhl2030::ippeve_attr_lines(parse_pjl_status(
-      "@PJL INFO STATUS\r\nCODE=40022\r\nDISPLAY=\"PAPER JAM       \"\r\n\x0c"));
-  expect(jam_attrs.find("STATE: +media-jam\n") != std::string::npos,
-         "jam publishes media-jam");
-  const std::string unknown_attrs =
-      sisterhl2030::ippeve_attr_lines(parse_pjl_status(""));
-  expect(unknown_attrs.find("ATTR: marker-levels=-2,-2\n") != std::string::npos,
-         "unknown levels stay -2, not 0");
-  const std::string desc = sisterhl2030::printer_supply_description();
-  expect(desc.find("TN-2000") != std::string::npos, "TN-2000 name");
-  expect(desc.find("DR-2000") != std::string::npos, "DR-2000 name");
-
-  expect(sisterhl2030::serial_from_device_uri(
-             "usb://Brother/HL-2030%20series?serial=B9J561723") == "B9J561723",
-         "serial from URI");
+  // What status_cb hands papplPrinterSetSupplies, which PAPPL turns into
+  // marker-levels and marker-names on its own.
+  const sisterhl2030::PrinterStatus ready_st = parse_pjl_status(ready);
+  expect(ready_st.toner_percent == 100 && ready_st.drum_percent == 70,
+         "levels for the Supply Levels panel");
+  expect(!ready_st.cover_open, "ready clears cover-open");
+  expect(parse_pjl_status(
+             "@PJL INFO STATUS\r\nCODE=40022\r\nDISPLAY=\"PAPER JAM       \"\r\n\x0c")
+             .media_jam,
+         "jam reports media-jam");
+  const sisterhl2030::PrinterStatus empty_st = parse_pjl_status("");
+  expect(empty_st.toner_percent == sisterhl2030::kLevelUnknown &&
+             empty_st.drum_percent == sisterhl2030::kLevelUnknown,
+         "unknown levels stay unknown, not 0");
+  expect(std::strstr(sisterhl2030::toner_description(), "TN-2000") != nullptr,
+         "TN-2000 name");
+  expect(std::strstr(sisterhl2030::drum_description(), "DR-2000") != nullptr,
+         "DR-2000 name");
   expect(sisterhl2030::drum_remaining_percent(0) == 100, "new drum");
   expect(sisterhl2030::drum_remaining_percent(6000) == 50, "half drum");
   expect(sisterhl2030::drum_remaining_percent(20000) == 0, "over-life drum");

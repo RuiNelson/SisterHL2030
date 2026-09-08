@@ -104,26 +104,11 @@ const char* toner_state_label(TonerState s);
 // IPP / CUPS presentation
 // ---------------------------------------------------------------------------
 
-// RFC 8011 printer-supply octet string for toner (index 1) and drum (index 2).
-std::string printer_supply_octet(const PrinterStatus& st);
-
-// "Black toner (TN-2000),Drum (DR-2000)" — the marker-names pair.
-std::string printer_supply_description();
-
-// Consumable names, so every surface calls them the same thing.
+// Consumable names, so every surface calls them the same thing. PAPPL turns
+// these into marker-names itself, from what status_cb hands
+// papplPrinterSetSupplies.
 const char* toner_description();
 const char* drum_description();
-
-// ippeveprinter stderr lines (ATTR: / STATE:), newline-terminated. Kept
-// for the retired façade's tests and for sister-status --ipp.
-std::string ippeve_attr_lines(const PrinterStatus& st);
-
-// ---------------------------------------------------------------------------
-// URI helpers
-// ---------------------------------------------------------------------------
-
-// Serial number from a usb://…?serial= URI. Empty if the query is absent.
-std::string serial_from_device_uri(const std::string& uri);
 
 }  // namespace sisterhl2030
 

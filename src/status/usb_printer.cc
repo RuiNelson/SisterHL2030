@@ -55,8 +55,6 @@ constexpr useconds_t kCollectSliceUs = kCollectSliceMs * 1000;
 // loose; a short extra collect then picks up any tail. These are what the
 // device is held for, so the whole supplies query is at most four times
 // kSupplyCommandWaitMs plus the tail -- and much less than that in practice,
-// because collect_in returns as soon as the reply is complete.
-constexpr int kSingleCommandWaitMs = 800;
 constexpr int kSupplyCommandWaitMs = 700;
 constexpr int kSupplyTailWaitMs = 200;
 
@@ -362,9 +360,9 @@ long elapsed_ms(const timeval& start) {
 // `stop_when_complete` returns the moment the accumulated reply satisfies
 // pjl_response_complete(), which is the whole reason the budget is rarely
 // spent. Pass it only where that predicate means something: the supplies
-// query tests it on the very next line, while pjl_query() collects the answer
-// to one arbitrary command, for which CODE= and DRUMLIFE= are no sentinel at
-// all -- it has to wait out its budget.
+// query tests it on the very next line, while the tail collect below has to
+// wait out its budget, since its job is to sweep up whatever trails the
+// reply rather than to recognise one.
 void collect_in(Opened* o, std::string* acc, int wait_ms,
                 bool stop_when_complete = false) {
   timeval start;
@@ -389,36 +387,6 @@ void collect_in(Opened* o, std::string* acc, int wait_ms,
 }
 
 }  // namespace
-
-bool pjl_query(const std::string& want_serial, const std::string& commands_crlf,
-               std::string* response, std::string* error) {
-  response->clear();
-  error->clear();
-  io_service_t svc = find_hl2030(want_serial, error);
-  if (!svc) {
-    return false;
-  }
-  Opened o;
-  bool ok = open_device(svc, &o, error);
-  IOObjectRelease(svc);
-  if (!ok) {
-    o.close();
-    return false;
-  }
-
-  // One INFO (or other) command. A trailing ECHO is added by supplies query.
-  if (!write_pjl(&o, commands_crlf, error)) {
-    o.close();
-    return false;
-  }
-  collect_in(&o, response, kSingleCommandWaitMs);
-  o.close();
-  if (response->empty()) {
-    *error = "no PJL response";
-    return false;
-  }
-  return true;
-}
 
 bool pjl_query_supplies(const std::string& want_serial, std::string* response,
                         std::string* error) {

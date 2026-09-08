@@ -12,7 +12,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <sstream>
 #include <string>
 
 namespace sisterhl2030 {
@@ -269,72 +268,5 @@ PrinterStatus parse_pjl_status(const std::string& text) {
 const char* toner_description() { return "Black toner (TN-2000)"; }
 
 const char* drum_description() { return "Drum (DR-2000)"; }
-
-std::string printer_supply_description() {
-  return std::string(toner_description()) + "," + drum_description();
-}
-
-std::string printer_supply_octet(const PrinterStatus& st) {
-  const int toner = st.toner_percent;
-  const int drum = st.drum_percent;
-  char buf[512];
-  std::snprintf(
-      buf, sizeof(buf),
-      "index=1;class=supplyThatIsConsumed;type=toner;unit=percent;"
-      "maxcapacity=100;level=%d;colorantname=black;,"
-      "index=2;class=supplyThatIsConsumed;type=opc;unit=percent;"
-      "maxcapacity=100;level=%d;colorantname=unknown;",
-      toner, drum);
-  return buf;
-}
-
-std::string serial_from_device_uri(const std::string& uri) {
-  const size_t q = uri.find("serial=");
-  if (q == std::string::npos) {
-    return {};
-  }
-  std::string s = uri.substr(q + 7);
-  const size_t cut = s.find_first_of("& \t\r\n");
-  if (cut != std::string::npos) {
-    s.resize(cut);
-  }
-  return s;
-}
-
-std::string ippeve_attr_lines(const PrinterStatus& st) {
-  std::ostringstream os;
-  os << "ATTR: printer-supply=" << printer_supply_octet(st) << "\n";
-  // The Supply Levels panel reads marker-levels, so refresh it too. CUPS
-  // picks these up off the queue's backend on the next job.
-  os << "ATTR: marker-levels=" << st.toner_percent << "," << st.drum_percent
-     << "\n";
-  os << "STATE: -toner-low,-toner-empty,-opc-life-almost-over,-opc-life-over,"
-        "-marker-waste-full-report,-marker-waste-almost-full-report,"
-        "-marker-supply-low-warning,-cover-open,-media-jam,-media-empty,"
-        "-media-needed\n";
-  if (st.toner_empty) {
-    os << "STATE: +toner-empty\n";
-  } else if (st.toner_low) {
-    os << "STATE: +toner-low\n";
-  }
-  if (st.drum_empty) {
-    os << "STATE: +opc-life-over\n";
-  } else if (st.drum_low) {
-    os << "STATE: +opc-life-almost-over\n";
-  }
-  if (st.cover_open) {
-    os << "STATE: +cover-open\n";
-  }
-  if (st.media_jam) {
-    os << "STATE: +media-jam\n";
-  }
-  if (st.media_empty) {
-    os << "STATE: +media-empty\n";
-  }
-  if (st.media_needed) {
-    os << "STATE: +media-needed\n";
-  }
-  return os.str();
-}
 
 }  // namespace sisterhl2030
