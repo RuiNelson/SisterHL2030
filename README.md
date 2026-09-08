@@ -200,7 +200,7 @@ wire format was recovered.
 
 ## License
 
-GNU GPL v2 or later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+GNU GPL v2 or later. See [LICENSE](LICENSE).
 
 Brother's original Linux packages were used locally, during development
 only, as a protocol reference; they are not included in this repository and
