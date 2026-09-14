@@ -24,7 +24,9 @@ if ! nc -z localhost 8631 2>/dev/null; then
   echo "WARNING: the printer application is not listening on 8631." >&2
 fi
 
-tmp="$(mktemp /tmp/sister-queue.XXXXXX.ppd)"
+tmp="$(mktemp /tmp/sister-queue.XXXXXX)"
+mv "$tmp" "$tmp.ppd"
+tmp="$tmp.ppd"
 generated=""
 
 if [[ -x "$IPP2PPD" ]]; then
