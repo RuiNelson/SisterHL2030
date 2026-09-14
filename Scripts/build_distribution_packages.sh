@@ -33,7 +33,7 @@ VERSION="$(sed -n 's/^project(sisterhl2030 VERSION \([0-9.]*\).*/\1/p' "$ROOT/CM
 # import target differs from where `security import` put the matching
 # private key), so a name lookup matches twice and pkgbuild's --sign
 # resolution becomes ambiguous. The fingerprint is unambiguous either way.
-SIGN_ID="${SISTER_INSTALLER_IDENTITY:-89328DFCD49A1B576317AB81F3AF28003FB1D0A4}"
+SIGN_ID="${SISTER_INSTALLER_IDENTITY:-92BD9B1189801928AC25E2E0859E42F08025A07A}"
 if ! security find-identity -v 2>/dev/null | grep -q "$SIGN_ID"; then
   echo "No \"$SIGN_ID\" identity in the keychain. Import your Developer ID" >&2
   echo "Installer certificate first (see distrib/DeveloperIDInstaller.csr)." >&2
@@ -45,7 +45,7 @@ fi
 # (which is all _privileged-update-filter.sh does post-install, to survive
 # Tahoe's OS_REASON_CODESIGNING kill) — it wants a Developer ID signature
 # with the hardened runtime and a secure timestamp.
-APP_SIGN_ID="${SISTER_APP_IDENTITY:-CD69A8CC3BDC105191BDE97A2DC2C8D8E7FDD0D8}"
+APP_SIGN_ID="${SISTER_APP_IDENTITY:-6C3A9E6BC7FDF89C6642F697DC72CB3C052478D9}"
 if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$APP_SIGN_ID"; then
   echo "No \"$APP_SIGN_ID\" identity in the keychain. Import your Developer ID" >&2
   echo "Application certificate first." >&2
