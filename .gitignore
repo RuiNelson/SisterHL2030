@@ -32,3 +32,6 @@ distrib/*
 !distrib/resources-install/**
 !distrib/distribution-install.xml.in
 /Scripts/__pycache__
+# Personal Apple signing data for Scripts/build_distribution_packages.sh.
+# The .example template is tracked; the real file never is.
+/Scripts/signing.local.sh

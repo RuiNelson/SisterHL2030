@@ -1,11 +1,16 @@
 #!/bin/bash
-# Build the four signed .pkg installers in distrib/:
+# Build the four .pkg installers in distrib/:
 #   InstallSisterDrivers.NewspaperStyle.pkg - native arm64 driver, AM45
 #                                             (clustered-dot) halftone
 #   InstallSisterDrivers.PencilStyle.pkg    - native arm64 driver, Atkinson
 #                                             (error-diffusion) halftone
 #   UninstallSisterDrivers.pkg  - removes either one
 #   UninstallBrotherDrivers.pkg - removes the official Intel Brother package
+#
+# Signed with a Developer ID when signing identities are configured (see
+# docs/signing.md); unsigned with a warning otherwise. The unsigned packages
+# install and run on the build Mac via a Gatekeeper bypass, but only the
+# signed + notarized ones can be handed out to other people.
 #
 # The two install packages are alternate builds of the same underlying
 # package -- same pkgbuild identifier, same install location -- so running
@@ -18,23 +23,55 @@
 # a machine-translated sentence in a signed installer.
 #
 # Not a novice-facing script: run it by hand from a Terminal to produce
-# the packages that get handed out. Requires a "Developer ID Installer"
-# identity in the keychain (a different cert type than "Developer ID
-# Application", which only signs binaries, not installer packages).
+# the packages that get handed out. Signing identities and the notarization
+# profile come from Scripts/signing.local.sh (gitignored; copy it from
+# signing.local.sh.example) or from the SISTER_* environment variables,
+# which take precedence over that file. Without them the script still builds
+# everything, but unsigned (see docs/signing.md). Requires a
+# "Developer ID Installer" identity in the keychain for a signed build (a
+# different cert type than "Developer ID Application", which only signs
+# binaries, not installer packages).
 set -euo pipefail
+
+c_red=$'\033[31m'
+c_bold=$'\033[1m'
+c_reset=$'\033[0m'
+if [[ ! -t 1 ]]; then
+  c_red=""; c_bold=""; c_reset=""
+fi
+
+warn_unsigned() {
+  echo "${c_red}${c_bold}WARNING: building UNSIGNED packages.${c_reset}" >&2
+  echo "${c_red}$*${c_reset}" >&2
+  echo "${c_red}Gatekeeper will refuse a double-click install. Right-click the${c_reset}" >&2
+  echo "${c_red}.pkg in Finder, choose Open, then Open again; if that is refused,${c_reset}" >&2
+  echo "${c_red}open it once more via System Settings > Privacy & Security > Open Anyway.${c_reset}" >&2
+  echo "${c_red}To build signed packages instead, see docs/signing.md.${c_reset}" >&2
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DISTRIB="$ROOT/distrib"
 VERSION="$(sed -n 's/^project(sisterhl2030 VERSION \([0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")"
 
+SIGNING_LOCAL="$SCRIPT_DIR/signing.local.sh"
+if [ -f "$SIGNING_LOCAL" ]; then
+  # shellcheck source=signing.local.sh
+  . "$SIGNING_LOCAL"
+fi
+
 # Pinned to the SHA-1 fingerprint, not the display name: the certificate
 # ended up in both the login and System keychains (Keychain Access's default
 # import target differs from where `security import` put the matching
 # private key), so a name lookup matches twice and pkgbuild's --sign
 # resolution becomes ambiguous. The fingerprint is unambiguous either way.
-SIGN_ID="${SISTER_INSTALLER_IDENTITY:-92BD9B1189801928AC25E2E0859E42F08025A07A}"
-if ! security find-identity -v 2>/dev/null | grep -q "$SIGN_ID"; then
+#
+# Any identity left unset means an unsigned build, not an error: the script
+# warns (in red) and builds everything unsigned instead. An identity that IS
+# set but is not found in the keychain is still a hard error, since that
+# means a misconfigured signing.local.sh rather than a deliberate choice.
+SIGN_ID="${SISTER_INSTALLER_IDENTITY:-}"
+if [ -n "$SIGN_ID" ] && ! security find-identity -v 2>/dev/null | grep -q "$SIGN_ID"; then
   echo "No \"$SIGN_ID\" identity in the keychain. Import your Developer ID" >&2
   echo "Installer certificate first (see distrib/DeveloperIDInstaller.csr)." >&2
   exit 1
@@ -45,25 +82,87 @@ fi
 # (which is all _privileged-update-filter.sh does post-install, to survive
 # Tahoe's OS_REASON_CODESIGNING kill) — it wants a Developer ID signature
 # with the hardened runtime and a secure timestamp.
-APP_SIGN_ID="${SISTER_APP_IDENTITY:-6C3A9E6BC7FDF89C6642F697DC72CB3C052478D9}"
-if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$APP_SIGN_ID"; then
+APP_SIGN_ID="${SISTER_APP_IDENTITY:-}"
+if [ -n "$APP_SIGN_ID" ] && ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$APP_SIGN_ID"; then
   echo "No \"$APP_SIGN_ID\" identity in the keychain. Import your Developer ID" >&2
   echo "Application certificate first." >&2
   exit 1
 fi
 
 # Notarization credential profile, created once with:
-#   xcrun notarytool store-credentials sister-notary \
+#   xcrun notarytool store-credentials <profile> \
 #       --apple-id "you@example.com" --team-id TEAMID --password app-specific-pw
-NOTARY_PROFILE="${SISTER_NOTARY_PROFILE:-sister-notary}"
-if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
-  echo "No \"$NOTARY_PROFILE\" notarytool credential profile in the keychain." >&2
-  echo "Run 'xcrun notarytool store-credentials $NOTARY_PROFILE' first." >&2
-  exit 1
+NOTARY_PROFILE="${SISTER_NOTARY_PROFILE:-}"
+
+SIGNED=0
+if [ -n "$SIGN_ID" ] && [ -n "$APP_SIGN_ID" ]; then
+  SIGNED=1
 fi
+
+NOTARIZE=0
+if [ "$SIGNED" = 1 ]; then
+  if [ -z "$NOTARY_PROFILE" ]; then
+    echo "SISTER_NOTARY_PROFILE is not set: packages will be signed but NOT notarized." >&2
+    echo "Gatekeeper on other Macs will still ask for a Right-click > Open on first install." >&2
+    echo "Run 'xcrun notarytool store-credentials <profile>' and set it in" >&2
+    echo "Scripts/signing.local.sh to notarize (see docs/signing.md)." >&2
+  elif ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+    echo "No \"$NOTARY_PROFILE\" notarytool credential profile in the keychain." >&2
+    echo "Run 'xcrun notarytool store-credentials $NOTARY_PROFILE' first." >&2
+    exit 1
+  else
+    NOTARIZE=1
+  fi
+fi
+
+if [ "$SIGNED" = 0 ]; then
+  missing=""
+  [ -z "$SIGN_ID" ] && missing="${missing} SISTER_INSTALLER_IDENTITY"
+  [ -z "$APP_SIGN_ID" ] && missing="${missing} SISTER_APP_IDENTITY"
+  warn_unsigned "Missing:${missing}."
+  if [ -n "$NOTARY_PROFILE" ]; then
+    echo "Skipping notarization: only signed packages can be notarized." >&2
+  fi
+fi
+
+# Wrapper commands that add --sign only in a signed build. (Plain functions
+# rather than an arg array: macOS ships bash 3.2, where expanding an empty
+# array under `set -u` aborts the script.)
+pkgbuild_signed() {
+  if [ "$SIGNED" = 1 ]; then
+    pkgbuild --sign "$SIGN_ID" "$@"
+  else
+    pkgbuild "$@"
+  fi
+}
+
+productbuild_signed() {
+  if [ "$SIGNED" = 1 ]; then
+    productbuild --sign "$SIGN_ID" "$@"
+  else
+    productbuild "$@"
+  fi
+}
+
+sign_binary() {
+  local bin="$1"
+  if [ "$SIGNED" = 1 ]; then
+    codesign --force --options runtime --timestamp \
+      --sign "$APP_SIGN_ID" "$bin"
+  else
+    # Same ad-hoc signature the privileged install scripts apply, so the
+    # unsigned payload at least runs on the build Mac (Tahoe kills a wholly
+    # unsigned binary under /Library/Printers). It carries no identity and
+    # Gatekeeper still treats the package as unsigned.
+    codesign --force --sign - "$bin"
+  fi
+}
 
 notarize_and_staple() {
   local pkg="$1"
+  if [ "$NOTARIZE" = 0 ]; then
+    return 0
+  fi
   echo "Submitting $(basename "$pkg") for notarization (this can take a few minutes)…"
   xcrun notarytool submit "$pkg" --keychain-profile "$NOTARY_PROFILE" --wait
   echo "Stapling notarization ticket to $(basename "$pkg")…"
@@ -112,9 +211,12 @@ cp "$ROOT/Scripts/_privileged-create-queue.sh" "$PAYLOAD/.create-queue.sh"
 chmod 755 "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
 assert_system_only "$PAYLOAD/sister-status"
 
-echo "Signing sister-status for notarization…"
-codesign --force --options runtime --timestamp \
-  --sign "$APP_SIGN_ID" "$PAYLOAD/sister-status"
+if [ "$SIGNED" = 1 ]; then
+  echo "Signing sister-status for notarization…"
+else
+  echo "Ad-hoc signing sister-status (unsigned build)…"
+fi
+sign_binary "$PAYLOAD/sister-status"
 
 cp "$ROOT/launchd/com.ruinelson.sisterhl2030.printer.plist" \
    "$LAUNCHD_DEST/com.ruinelson.sisterhl2030.printer.plist"
@@ -185,11 +287,15 @@ for i in "${!variant_screen[@]}"; do
   cp "$ROOT/build/sister-printer-app" "$PAYLOAD/sister-printer-app"
   chmod 755 "$PAYLOAD/sister-printer-app"
   assert_system_only "$PAYLOAD/sister-printer-app"
-  codesign --force --options runtime --timestamp \
-    --sign "$APP_SIGN_ID" "$PAYLOAD/sister-printer-app"
+  if [ "$SIGNED" = 1 ]; then
+    echo "Signing sister-printer-app for notarization…"
+  else
+    echo "Ad-hoc signing sister-printer-app (unsigned build)…"
+  fi
+  sign_binary "$PAYLOAD/sister-printer-app"
 
   echo "Building the install component ($VERSION)…"
-  pkgbuild \
+  pkgbuild_signed \
     --root "$DISTRIB/root-install" \
     --identifier com.ruinelson.sisterhl2030.pkg.install \
     --version "$VERSION" \
@@ -218,40 +324,54 @@ for i in "${!variant_screen[@]}"; do
   dist_xml="${dist_xml//@VERSION@/$VERSION}"
   dist_xml="${dist_xml//@TITLE@/$title}"
   printf '%s\n' "$dist_xml" > "$DISTRIB/distribution-install.xml"
-  productbuild \
+  productbuild_signed \
     --distribution "$DISTRIB/distribution-install.xml" \
     --package-path "$DISTRIB" \
     --resources "$RES_BUILD" \
-    --sign "$SIGN_ID" \
     "$DISTRIB/$pkg_name.pkg"
   notarize_and_staple "$DISTRIB/$pkg_name.pkg"
   rm -rf "$RES_BUILD"
 done
 
 echo "Building UninstallSisterDrivers.pkg ($VERSION)…"
-pkgbuild \
+pkgbuild_signed \
   --nopayload \
   --identifier com.ruinelson.sisterhl2030.pkg.uninstall-sister \
   --version "$VERSION" \
   --scripts "$DISTRIB/scripts-uninstall-sister" \
-  --sign "$SIGN_ID" \
   "$DISTRIB/UninstallSisterDrivers.pkg"
 notarize_and_staple "$DISTRIB/UninstallSisterDrivers.pkg"
 
 echo "Building UninstallBrotherDrivers.pkg ($VERSION)…"
-pkgbuild \
+pkgbuild_signed \
   --nopayload \
   --identifier com.ruinelson.sisterhl2030.pkg.uninstall-brother \
   --version "$VERSION" \
   --scripts "$DISTRIB/scripts-uninstall-brother" \
-  --sign "$SIGN_ID" \
   "$DISTRIB/UninstallBrotherDrivers.pkg"
 notarize_and_staple "$DISTRIB/UninstallBrotherDrivers.pkg"
 
 echo
-echo "Verifying signatures and notarization…"
-for pkg in "${install_pkg_names[@]}" UninstallSisterDrivers UninstallBrotherDrivers; do
-  echo "--- $pkg.pkg ---"
-  pkgutil --check-signature "$DISTRIB/$pkg.pkg"
-  spctl --assess --type install -vv "$DISTRIB/$pkg.pkg"
-done
+if [ "$SIGNED" = 1 ] && [ "$NOTARIZE" = 1 ]; then
+  echo "Verifying signatures and notarization…"
+  for pkg in "${install_pkg_names[@]}" UninstallSisterDrivers UninstallBrotherDrivers; do
+    echo "--- $pkg.pkg ---"
+    pkgutil --check-signature "$DISTRIB/$pkg.pkg"
+    spctl --assess --type install -vv "$DISTRIB/$pkg.pkg"
+  done
+elif [ "$SIGNED" = 1 ]; then
+  echo "Verifying signatures (signed but NOT notarized: spctl assessment is skipped,"
+  echo "it only passes with a stapled notarization ticket)…"
+  for pkg in "${install_pkg_names[@]}" UninstallSisterDrivers UninstallBrotherDrivers; do
+    echo "--- $pkg.pkg ---"
+    pkgutil --check-signature "$DISTRIB/$pkg.pkg"
+  done
+else
+  echo "Verifying package structure (unsigned build: no signature to assess)…"
+  for pkg in "${install_pkg_names[@]}" UninstallSisterDrivers UninstallBrotherDrivers; do
+    echo "--- $pkg.pkg ---"
+    pkgutil --check-signature "$DISTRIB/$pkg.pkg" || true
+  done
+  echo
+  warn_unsigned "The packages above install, but only via the Gatekeeper bypass."
+fi

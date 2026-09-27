@@ -1,0 +1,32 @@
+#!/bin/bash
+# Personal Apple signing data for Scripts/build_distribution_packages.sh.
+# Copy this file to signing.local.sh (same directory) and fill in your own
+# values. signing.local.sh is gitignored and never committed.
+#
+#   cp Scripts/signing.local.sh.example Scripts/signing.local.sh
+#
+# Alternatively, export the same SISTER_* variables in your shell instead of
+# using this file. Environment variables take precedence over this file
+# (each entry below only fills in an unset/empty variable).
+#
+# Without any of these, the script still builds all four packages, but
+# unsigned (red warning, Gatekeeper bypass needed to install). Details in
+# docs/signing.md.
+#
+# Pinned to the SHA-1 fingerprint, not the display name: the certificate
+# ended up in both the login and System keychains (Keychain Access's default
+# import target differs from where `security import` put the matching
+# private key), so a name lookup matches twice and pkgbuild's --sign
+# resolution becomes ambiguous. The fingerprint is unambiguous either way.
+# Find yours with: security find-identity -v
+
+# "Developer ID Installer" identity (signs the .pkg files).
+: "${SISTER_INSTALLER_IDENTITY:=YOUR_INSTALLER_SHA1_FINGERPRINT}"
+
+# "Developer ID Application" identity (signs the binaries inside the payload).
+: "${SISTER_APP_IDENTITY:=YOUR_APPLICATION_SHA1_FINGERPRINT}"
+
+# Notarization credential profile, created once with:
+#   xcrun notarytool store-credentials sister-notary \
+#       --apple-id "you@example.com" --team-id TEAMID --password app-specific-pw
+: "${SISTER_NOTARY_PROFILE:=sister-notary}"
