@@ -15,10 +15,11 @@
 # libpng and libusb archives PAPPL links are single-architecture, which is
 # why the two builds cannot be one fat compile. SISTER_ARCHS (space-separated,
 # arm64 and/or x86_64) picks what to build; the default is both on an Apple
-# Silicon Mac and x86_64 alone on an Intel one. The x86_64 half on Apple
-# Silicon needs Rosetta and an Intel Homebrew under /usr/local (with cmake,
-# pkg-config, openssl@3, libpng and libusb) -- the whole configure and build
-# then runs as `arch -x86_64`.
+# Silicon Mac and x86_64 alone on an Intel one. On Apple Silicon the x86_64
+# half is cross-compiled with the native toolchain against static x86_64
+# OpenSSL, libpng and libusb that Scripts/build_x86_64_deps.sh builds from
+# source (Homebrew is arm64-only on current macOS). No Rosetta is needed to
+# build; it is only needed to run the x86_64 result, e.g. ctest.
 #
 # Signed with a Developer ID when signing identities are configured (see
 # docs/signing.md); unsigned with a warning otherwise. The unsigned packages
@@ -214,16 +215,21 @@ else
   ARCHS="x86_64"
 fi
 
-# Runs a command as the given architecture. The host's own architecture runs
-# it directly; x86_64 on Apple Silicon goes through Rosetta with the Intel
-# Homebrew first in PATH so cmake, pkg-config and the static archives are all
-# x86_64. arm64 cannot be built on an Intel Mac.
+# Runs a command for the given architecture. The host's own architecture runs
+# it directly; x86_64 on Apple Silicon runs it natively too, but with
+# PKG_CONFIG_PATH at the x86_64 static libraries so PAPPL's configure and the
+# archive lookup in CMakeLists.txt see those instead of Homebrew's arm64 ones.
+# arm64 cannot be built on an Intel Mac.
+X86_DEPS=""
 arch_run() {
   local a="$1"; shift
   if [ "$a" = "$HOST_ARCH" ]; then
     "$@"
   elif [ "$a" = x86_64 ] && [ "$HOST_ARCH" = arm64 ]; then
-    PATH="/usr/local/bin:/usr/local/sbin:$PATH" arch -x86_64 "$@"
+    if [ -z "$X86_DEPS" ]; then
+      X86_DEPS="$("$SCRIPT_DIR/build_x86_64_deps.sh")"
+    fi
+    PKG_CONFIG_PATH="$X86_DEPS/lib/pkgconfig" "$@"
   else
     echo "Cannot build $a on a $HOST_ARCH Mac." >&2
     exit 1
@@ -236,10 +242,7 @@ for a in $ARCHS; do
     *) echo "Unsupported architecture \"$a\" in SISTER_ARCHS (arm64 or x86_64)." >&2; exit 1 ;;
   esac
   if ! arch_run "$a" cmake --version >/dev/null 2>&1; then
-    echo "No runnable $a cmake. For x86_64 on Apple Silicon, install Rosetta" >&2
-    echo "(softwareupdate --install-rosetta) and Homebrew under /usr/local:" >&2
-    echo "  arch -x86_64 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"" >&2
-    echo "  arch -x86_64 /usr/local/bin/brew install cmake pkg-config openssl@3 libpng libusb" >&2
+    echo "No runnable cmake for $a." >&2
     exit 1
   fi
 done

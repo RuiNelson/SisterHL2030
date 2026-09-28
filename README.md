@@ -178,9 +178,10 @@ Builds target the architecture of the Mac you run them on. To build the
 other one, pass `-DCMAKE_OSX_ARCHITECTURES=x86_64` (or `arm64`) to CMake;
 the printer application takes one architecture per build directory, since
 the static OpenSSL, libpng and libusb it links are single-architecture. For
-Intel from an Apple Silicon Mac, install Rosetta and Homebrew under
-`/usr/local`, then run the configure and build as `arch -x86_64`. The
-packaging script does this for you and joins the two builds with `lipo`;
+Intel from an Apple Silicon Mac, `Scripts/build_x86_64_deps.sh` builds static
+x86_64 copies of those three libraries from source (Homebrew is arm64-only
+on current macOS); configure with `PKG_CONFIG_PATH` pointing at its output.
+The packaging script does all of this and joins the two builds with `lipo`;
 `SISTER_ARCHS="arm64"` or `"x86_64"` limits it to one.
 
 To turn a bitmap into a HL-2030 job stream directly, without printing:

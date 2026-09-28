@@ -279,9 +279,9 @@ if(SISTER_WITH_PAPPL)
     if(NOT _sister_lipo EQUAL 0 OR NOT _sister_lib_archs MATCHES "(^| )${PAPPL_ARCH}( |$)")
       message(FATAL_ERROR
         "${SISTER_STATIC_${_tag}} is built for '${_sister_lib_archs}', not "
-        "${PAPPL_ARCH}. For an x86_64 build on an Apple Silicon Mac, install "
-        "Homebrew under Rosetta (/usr/local) and run the whole configure and "
-        "build as `arch -x86_64`, with that Homebrew first in PATH.")
+        "${PAPPL_ARCH}. For x86_64 on an Apple Silicon Mac, run "
+        "Scripts/build_x86_64_deps.sh and configure with "
+        "PKG_CONFIG_PATH=<its prefix>/lib/pkgconfig.")
     endif()
     list(APPEND SISTER_STATIC_ARCHIVES "${SISTER_STATIC_${_tag}}")
     string(REPLACE "." "\\." _pat "${_lib}")

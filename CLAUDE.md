@@ -47,9 +47,16 @@ libusb archives it links statically are single-arch Homebrew files
 each with `lipo -archs` before linking. `patch_pappl_idle.cmake` keeps only
 the matching `-arch` in PAPPL's `OPTIM`, and the arch is part of the
 `PAPPL_STAMP_VALUE`. A real x86_64 printer application on Apple Silicon
-therefore needs Rosetta plus an Intel Homebrew, with the whole configure
-and build run as `arch -x86_64` and `/usr/local/bin` first in `PATH`.
-`Scripts/build_distribution_packages.sh` does exactly that, one tree per
+therefore needs static x86_64 copies of those libraries. Homebrew is
+arm64-only on current macOS (its installer refuses Intel), so
+`Scripts/build_x86_64_deps.sh` cross-builds pinned OpenSSL, libpng and
+libusb from source into `distrib/deps-x86_64` with Apple clang, and the
+PAPPL configure runs natively with `PKG_CONFIG_PATH` at that prefix. It
+denies `pipe2` to libusb: the SDK declares it for macOS 27+, and libusb
+would call it unguarded on older systems where it is a null symbol. Rosetta
+is only needed to *run* the x86_64 result (ctest, including
+`pappl_features`, passes under it).
+`Scripts/build_distribution_packages.sh` drives all of this, one tree per
 arch in `distrib/build-<arch>`, then `lipo -create`s the two, so the shipped
 `.pkg` files carry universal binaries; `assert_system_only` runs on each thin
 binary, since `otool -L` on a fat file prints per-slice header lines it would
