@@ -38,8 +38,8 @@ if [[ -n "$reasons" ]]; then
 fi
 
 arch="$(uname -m)"
-if [[ "$arch" != "arm64" ]]; then
-  echo "WARNING: this Mac reports architecture \"${arch}\", not Apple Silicon. SisterHL2030 was built for arm64." >&2
+if [[ "$arch" != "arm64" && "$arch" != "x86_64" ]]; then
+  echo "WARNING: this Mac reports architecture \"${arch}\"; SisterHL2030 is built for arm64 and x86_64." >&2
 fi
 
 exit 0

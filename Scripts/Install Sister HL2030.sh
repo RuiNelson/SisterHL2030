@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build and install the native Apple Silicon SisterHL2030 CUPS filter.
+# Build and install the native (Apple Silicon or Intel) SisterHL2030 printer application.
 # Refuses to run while official Intel Brother drivers are still present.
 set -euo pipefail
 
@@ -12,7 +12,7 @@ trap 'echo; echo "${c_red}The program stopped with an error.${c_reset}"; echo "R
 require_macos
 
 banner "Install Sister HL-2030"
-echo "This program installs a ${c_bold}native Apple Silicon${c_reset} driver"
+echo "This program installs a ${c_bold}native${c_reset} driver ($(uname -m))"
 echo "for the Brother HL-2030 (series) printer."
 echo
 echo "It does not use Brother's Intel software, and it does not use Rosetta."
@@ -58,9 +58,9 @@ fi
 echo
 
 arch="$(uname -m)"
-if [[ "$arch" != "arm64" ]]; then
-  echo "${c_yellow}Warning:${c_reset} this Mac reports architecture \"${arch}\", not Apple Silicon."
-  echo "SisterHL2030 was made for M1/M2/M3/M4 Macs."
+if [[ "$arch" != "arm64" && "$arch" != "x86_64" ]]; then
+  echo "${c_yellow}Warning:${c_reset} this Mac reports architecture \"${arch}\"."
+  echo "SisterHL2030 is built for Apple Silicon (arm64) and Intel (x86_64) Macs."
   if ! ask_yes "Continue anyway? Type YES:"; then
     echo "Cancelled."
     pause
@@ -226,7 +226,7 @@ echo "${c_green}${c_bold}Sister HL-2030 installed.${c_reset}"
 echo
 echo "This is a PAPPL printer application, not a classic CUPS PPD (that is what"
 echo "macOS reports as deprecated). CUPS speaks IPP Everywhere to SisterHL2030,"
-echo "and the arm64 encoder speaks to the HL-2030 over USB."
+echo "and the native encoder speaks to the HL-2030 over USB."
 echo
 echo "Printer application: $SISTER_APP"
 if [[ -x "$SISTER_APP" ]]; then

@@ -5,7 +5,7 @@
 </div>
 
 A modern, native driver for the Brother HL-2030 laser printer on Apple
-Silicon Macs.
+Silicon and Intel Macs.
 
 ## Why this exists
 
@@ -17,8 +17,13 @@ will remove Rosetta 2 entirely. When that happens, the official Brother
 driver will simply stop working, and an otherwise perfectly good printer
 would become e-waste.
 
-SisterHL2030 is a from-scratch driver, written natively for Apple Silicon,
-so your HL-2030 keeps working long after Rosetta 2 is gone.
+SisterHL2030 is a from-scratch driver, built natively for both Apple
+Silicon and Intel, so your HL-2030 keeps working long after Rosetta 2 is
+gone.
+
+On an Intel Mac Brother's driver still runs natively today; SisterHL2030 is
+still worth installing there for AirPrint and the supply levels panel, and
+it means nothing changes if you later move to Apple Silicon.
 
 While rebuilding the driver, it also picked up a feature Brother's own
 driver never had: **AirPrint**. With the printer connected to your Mac over
@@ -28,13 +33,13 @@ awake.
 
 ## Is this for you?
 
-If you have a Brother HL-2030 (or HL-2030R) connected to an Apple Silicon
-Mac (M1 or newer) by USB, yes.
+If you have a Brother HL-2030 (or HL-2030R) connected by USB to a Mac,
+yes: Apple Silicon (M1 or newer) or Intel, running macOS 11 or later. One
+installer covers both.
 
 This driver does **not** work with the printer over a network/Wi-Fi
-connection, and it does not support Intel Macs. Plug the printer directly
-into the Apple Silicon Mac that will host it; that Mac then makes it
-available to everything else on the network.
+connection. Plug the printer directly into the Mac that will host it; that
+Mac then makes it available to everything else on the network.
 
 ## Two print styles
 
@@ -103,7 +108,8 @@ removes the driver, its background service, and the printer queue.
 
 ## What you get
 
-* **Native Apple Silicon**: no Rosetta 2, no emulation.
+* **Native on Apple Silicon and Intel**: one universal build, no Rosetta 2,
+  no emulation.
 * **AirPrint**: print from any Mac, iPhone, or iPad on the network, once
   the printer is connected to one Mac over USB and that Mac is awake.
 * **Correct scaling**: pages print at 100% by default.
@@ -166,7 +172,16 @@ halftone style to build (see [Two print styles](#two-print-styles) above).
 `Scripts/Uninstall Sister HL2030.sh` reverses it.
 `Scripts/build_distribution_packages.sh` builds the four signed `.pkg`
 files that ship in each release: one `InstallSisterDrivers` per style, plus
-the two uninstallers.
+the two uninstallers. Their binaries are universal (arm64 + x86_64).
+
+Builds target the architecture of the Mac you run them on. To build the
+other one, pass `-DCMAKE_OSX_ARCHITECTURES=x86_64` (or `arm64`) to CMake;
+the printer application takes one architecture per build directory, since
+the static OpenSSL, libpng and libusb it links are single-architecture. For
+Intel from an Apple Silicon Mac, install Rosetta and Homebrew under
+`/usr/local`, then run the configure and build as `arch -x86_64`. The
+packaging script does this for you and joins the two builds with `lipo`;
+`SISTER_ARCHS="arm64"` or `"x86_64"` limits it to one.
 
 To turn a bitmap into a HL-2030 job stream directly, without printing:
 

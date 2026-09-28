@@ -6,7 +6,8 @@
 #   - Skip cupsSetServerCredentials when PAPPL_SOPTIONS_NO_TLS is set
 #     (otherwise PAPPL mints a self-signed cert on every boot)
 #   - After configure: dummy status UI so AppKit is not linked,
-#     arm64-only so the static lib is not a fat x86_64+arm64 archive,
+#     single-architecture (PAPPL_ARCH) so the static lib is not a fat
+#     x86_64+arm64 archive,
 #     -Os without -g / -fPIC so the .a is size-optimised, not a debug PIC build
 #   - Compile-out raw sockets, USB gadget, and TLS/network/security/log web
 #     pages so ld does not pull printer-raw/usb/httpmon or those HTML handlers
@@ -14,7 +15,8 @@
 # It also carries one behavioural fix that is not about size: the device read
 # timeouts, which upstream sets to ten seconds (see below).
 #
-# Inputs: PAPPL_SRC (required), PAPPL_MAKEDEFS (optional, post-configure)
+# Inputs: PAPPL_SRC (required), PAPPL_MAKEDEFS (optional, post-configure),
+# PAPPL_ARCH (arm64 or x86_64; default arm64, used with PAPPL_MAKEDEFS)
 
 if(NOT PAPPL_SRC)
   message(FATAL_ERROR "PAPPL_SRC is not set")
@@ -37,11 +39,20 @@ if(PAPPL_MAKEDEFS)
   sister_replace("${PAPPL_MAKEDEFS}"
     "-framework AppKit "
     "")
-  # PAPPL's Darwin defaults bake both Intel and Apple Silicon into OPTIM.
-  # The driver is arm64-only; drop the unused slice.
-  sister_replace("${PAPPL_MAKEDEFS}"
-    "-arch x86_64 "
-    "")
+  # PAPPL's Darwin defaults bake both Intel and Apple Silicon into OPTIM
+  # ("-arch x86_64 -arch arm64"). Keep only the slice this build is for; the
+  # shipped universal binary is two thin builds joined with lipo, because the
+  # static OpenSSL/libpng/libusb archives it links are single-architecture.
+  if(NOT PAPPL_ARCH)
+    set(PAPPL_ARCH arm64)
+  endif()
+  if(PAPPL_ARCH STREQUAL "arm64")
+    sister_replace("${PAPPL_MAKEDEFS}" "-arch x86_64 " "")
+  elseif(PAPPL_ARCH STREQUAL "x86_64")
+    sister_replace("${PAPPL_MAKEDEFS}" " -arch arm64" "")
+  else()
+    message(FATAL_ERROR "patch_pappl_idle: PAPPL_ARCH must be arm64 or x86_64")
+  endif()
   # -g pulls DWARF into the static lib; -fPIC is for dylibs, not this archive.
   sister_replace("${PAPPL_MAKEDEFS}"
     "-g -Os"
