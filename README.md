@@ -21,21 +21,21 @@ SisterHL2030 is a from-scratch driver, built natively for both Apple
 Silicon and Intel, so your HL-2030 keeps working long after Rosetta 2 is
 gone.
 
-On an Intel Mac Brother's driver still runs natively today; SisterHL2030 is
-still worth installing there for AirPrint and the supply levels panel, and
-it means nothing changes if you later move to Apple Silicon.
-
 While rebuilding the driver, it also picked up a feature Brother's own
 driver never had: **AirPrint**. With the printer connected to your Mac over
 USB, every device on your network (other Macs, iPhones, iPads) can print
 to it wirelessly, no drivers required on their end. This Mac has to stay
 awake.
 
+On an Intel Mac Brother's driver still runs natively today; SisterHL2030 is
+still worth installing there for AirPrint and the supply levels panel, and
+it means nothing changes if you later move to Apple Silicon.
+
 ## Is this for you?
 
 If you have a Brother HL-2030 (or HL-2030R) connected by USB to a Mac,
-yes: Apple Silicon (M1 or newer) or Intel, running macOS 11 or later. One
-installer covers both.
+yes: running macOS 11 or later. One installer covers both Apple Silicon and
+Intel computers.
 
 This driver does **not** work with the printer over a network/Wi-Fi
 connection. Plug the printer directly into the Mac that will host it; that
