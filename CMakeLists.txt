@@ -33,8 +33,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Build for the architecture cmake itself is running as (arm64 on Apple
+# Silicon, x86_64 on an Intel Mac or under `arch -x86_64`). Override with
+# -DCMAKE_OSX_ARCHITECTURES=... to cross-compile the encoder and tools. The
+# PAPPL printer application is one architecture per build tree; a universal
+# binary is made by lipo-ing two of them (see Scripts/build_distribution_packages.sh).
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
-  set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS architectures" FORCE)
+  set(CMAKE_OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}" CACHE STRING
+      "macOS architectures" FORCE)
 endif()
 
 # Smallest shipping code. CMake's Release default is -O3 (speed, larger
@@ -131,13 +137,25 @@ endif()
 option(SISTER_WITH_PAPPL "Build the PAPPL printer application" OFF)
 
 if(SISTER_WITH_PAPPL)
+  if(NOT CMAKE_OSX_ARCHITECTURES MATCHES "^(arm64|x86_64)$")
+    message(FATAL_ERROR
+      "SISTER_WITH_PAPPL builds one architecture per build tree (arm64 or "
+      "x86_64), got CMAKE_OSX_ARCHITECTURES='${CMAKE_OSX_ARCHITECTURES}'. "
+      "PAPPL's static dependencies (OpenSSL, libpng, libusb) are single-arch "
+      "Homebrew archives, so build each architecture separately and lipo the "
+      "results together.")
+  endif()
+  set(PAPPL_ARCH ${CMAKE_OSX_ARCHITECTURES})
+
   set(PAPPL_VERSION 1.4.12)
   set(PAPPL_SHA256 1684c4e06446e9f7d93a39729fa0ba56f07a4007560080fdad7d0e2076a3615f)
   set(PAPPL_PREFIX ${CMAKE_BINARY_DIR}/pappl)
   set(PAPPL_PC ${PAPPL_PREFIX}/lib/pkgconfig/pappl.pc)
   # Bump when cmake/patch_pappl_idle.cmake or the configure line changes so
   # the next cmake run rebuilds libpappl instead of reusing a fat/AppKit build.
-  set(PAPPL_STAMP_VALUE "text-6")
+  # The architecture is part of the value, so re-pointing a build tree at the
+  # other one rebuilds it too.
+  set(PAPPL_STAMP_VALUE "text-7-${PAPPL_ARCH}")
   set(PAPPL_STAMP ${PAPPL_PREFIX}/.sister-pappl-stamp)
 
   set(_pappl_stamp_now "")
@@ -186,6 +204,7 @@ if(SISTER_WITH_PAPPL)
       COMMAND ${CMAKE_COMMAND}
               -DPAPPL_SRC=${_pappl_src}
               -DPAPPL_MAKEDEFS=${_pappl_src}/Makedefs
+              -DPAPPL_ARCH=${PAPPL_ARCH}
               -P ${CMAKE_SOURCE_DIR}/cmake/patch_pappl_idle.cmake
       RESULT_VARIABLE _pappl_mkpatch)
     if(NOT _pappl_mkpatch EQUAL 0)
@@ -249,6 +268,20 @@ if(SISTER_WITH_PAPPL)
       message(FATAL_ERROR
         "No static lib${_lib}.a beside the dylib PAPPL linked. The shipped "
         "binary must not load it from a package manager prefix at runtime.")
+    endif()
+    # A Homebrew prefix holds one architecture: arm64 under /opt/homebrew,
+    # x86_64 under /usr/local. Catch the mismatch here, not as an ld warning
+    # about "archive member's cputype" that names no cause.
+    execute_process(
+      COMMAND lipo -archs "${SISTER_STATIC_${_tag}}"
+      OUTPUT_VARIABLE _sister_lib_archs OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE _sister_lipo)
+    if(NOT _sister_lipo EQUAL 0 OR NOT _sister_lib_archs MATCHES "(^| )${PAPPL_ARCH}( |$)")
+      message(FATAL_ERROR
+        "${SISTER_STATIC_${_tag}} is built for '${_sister_lib_archs}', not "
+        "${PAPPL_ARCH}. For an x86_64 build on an Apple Silicon Mac, install "
+        "Homebrew under Rosetta (/usr/local) and run the whole configure and "
+        "build as `arch -x86_64`, with that Homebrew first in PATH.")
     endif()
     list(APPEND SISTER_STATIC_ARCHIVES "${SISTER_STATIC_${_tag}}")
     string(REPLACE "." "\\." _pat "${_lib}")

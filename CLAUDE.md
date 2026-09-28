@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A clean-room, native Apple Silicon driver for the Brother HL-2030, a host-based
+A clean-room, native (Apple Silicon and Intel) driver for the Brother HL-2030, a host-based
 laser with no PostScript/PCL-PDL/AirPrint of its own. The host rasterizes and
 sends Brother's "mode 1030" compressed stream over USB. GPL-2.0-or-later; every
 source file carries the SPDX header and `namespace sisterhl2030`.
@@ -35,6 +35,25 @@ Run one by name with `ctest --test-dir build -R status --output-on-failure`.
 
 `sister-status` and its `-framework IOKit` link are guarded by `if(APPLE)`; the
 encoder library, `sister-rawtobr`, and both tests build anywhere.
+
+**Architectures: arm64 and x86_64, one per build tree.** `CMAKE_OSX_ARCHITECTURES`
+defaults to the architecture cmake runs as, so a plain build is native.
+`-DCMAKE_OSX_ARCHITECTURES=x86_64` cross-compiles the encoder, tools and tests
+from an Apple Silicon Mac with no other setup (it builds, but you cannot run
+the result without Rosetta). The PAPPL build is the constraint:
+`SISTER_WITH_PAPPL` refuses a multi-arch value, because the OpenSSL, libpng and
+libusb archives it links statically are single-arch Homebrew files
+(`/opt/homebrew` = arm64, `/usr/local` = x86_64) and `CMakeLists.txt` checks
+each with `lipo -archs` before linking. `patch_pappl_idle.cmake` keeps only
+the matching `-arch` in PAPPL's `OPTIM`, and the arch is part of the
+`PAPPL_STAMP_VALUE`. A real x86_64 printer application on Apple Silicon
+therefore needs Rosetta plus an Intel Homebrew, with the whole configure
+and build run as `arch -x86_64` and `/usr/local/bin` first in `PATH`.
+`Scripts/build_distribution_packages.sh` does exactly that, one tree per
+arch in `distrib/build-<arch>`, then `lipo -create`s the two, so the shipped
+`.pkg` files carry universal binaries; `assert_system_only` runs on each thin
+binary, since `otool -L` on a fat file prints per-slice header lines it would
+mistake for stray libraries. `SISTER_ARCHS` narrows the set.
 
 **Nothing in an install may load a library from outside the OS.** PAPPL
 needs OpenSSL, libpng and libusb, and its pkg-config line points at whatever
@@ -82,7 +101,8 @@ rather than a minor one. To cut a release: bump `project(sisterhl2030 VERSION â€
 `CMakeLists.txt`, update this file if the example version string above is
 now stale, rebuild the four packages with
 `Scripts/build_distribution_packages.sh` (it compiles `sister-printer-app`
-twice, once per halftone screen -- see "Two print styles" in README.md),
+once per halftone screen and per architecture -- see "Two print styles" in
+README.md),
 commit, then tag the commit `vMAJOR.MINOR.PATCH` (e.g. `v0.9.2`) with
 `git tag`. The tag is what `gh release create` attaches the four `.pkg`
 files from `distrib/` to.

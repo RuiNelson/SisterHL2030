@@ -1,11 +1,24 @@
 #!/bin/bash
 # Build the four .pkg installers in distrib/:
-#   InstallSisterDrivers.NewspaperStyle.pkg - native arm64 driver, AM45
+#   InstallSisterDrivers.NewspaperStyle.pkg - native universal (arm64 +
+#                                             x86_64) driver, AM45
 #                                             (clustered-dot) halftone
-#   InstallSisterDrivers.PencilStyle.pkg    - native arm64 driver, Atkinson
-#                                             (error-diffusion) halftone
+#   InstallSisterDrivers.PencilStyle.pkg    - native universal driver,
+#                                             Atkinson (error-diffusion)
+#                                             halftone
 #   UninstallSisterDrivers.pkg  - removes either one
 #   UninstallBrotherDrivers.pkg - removes the official Intel Brother package
+#
+# Every binary is built once per architecture in its own tree under
+# distrib/build-<arch> and the thin results are joined with lipo, so one .pkg
+# installs natively on Apple Silicon and on Intel Macs. The static OpenSSL,
+# libpng and libusb archives PAPPL links are single-architecture, which is
+# why the two builds cannot be one fat compile. SISTER_ARCHS (space-separated,
+# arm64 and/or x86_64) picks what to build; the default is both on an Apple
+# Silicon Mac and x86_64 alone on an Intel one. The x86_64 half on Apple
+# Silicon needs Rosetta and an Intel Homebrew under /usr/local (with cmake,
+# pkg-config, openssl@3, libpng and libusb) -- the whole configure and build
+# then runs as `arch -x86_64`.
 #
 # Signed with a Developer ID when signing identities are configured (see
 # docs/signing.md); unsigned with a warning otherwise. The unsigned packages
@@ -192,24 +205,90 @@ if ! command -v cmake >/dev/null 2>&1; then
   exit 1
 fi
 
-# sister-printer-app is built twice below, once per halftone screen --
-# that is the whole point of this script. sister-status never links the
-# encoder library, so the screen switch cannot affect it; build it once
-# here rather than twice inside the loop.
-echo "Building sister-status ($VERSION, shared by both halftone variants)…"
-cd "$ROOT"
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON
-cmake --build build --target sister-status -j
+HOST_ARCH="$(uname -m)"
+if [ -n "${SISTER_ARCHS:-}" ]; then
+  ARCHS="$SISTER_ARCHS"
+elif [ "$HOST_ARCH" = arm64 ]; then
+  ARCHS="arm64 x86_64"
+else
+  ARCHS="x86_64"
+fi
 
-echo "Rebuilding the install payload from build/, launchd/ and docs/…"
+# Runs a command as the given architecture. The host's own architecture runs
+# it directly; x86_64 on Apple Silicon goes through Rosetta with the Intel
+# Homebrew first in PATH so cmake, pkg-config and the static archives are all
+# x86_64. arm64 cannot be built on an Intel Mac.
+arch_run() {
+  local a="$1"; shift
+  if [ "$a" = "$HOST_ARCH" ]; then
+    "$@"
+  elif [ "$a" = x86_64 ] && [ "$HOST_ARCH" = arm64 ]; then
+    PATH="/usr/local/bin:/usr/local/sbin:$PATH" arch -x86_64 "$@"
+  else
+    echo "Cannot build $a on a $HOST_ARCH Mac." >&2
+    exit 1
+  fi
+}
+
+for a in $ARCHS; do
+  case "$a" in
+    arm64|x86_64) ;;
+    *) echo "Unsupported architecture \"$a\" in SISTER_ARCHS (arm64 or x86_64)." >&2; exit 1 ;;
+  esac
+  if ! arch_run "$a" cmake --version >/dev/null 2>&1; then
+    echo "No runnable $a cmake. For x86_64 on Apple Silicon, install Rosetta" >&2
+    echo "(softwareupdate --install-rosetta) and Homebrew under /usr/local:" >&2
+    echo "  arch -x86_64 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"" >&2
+    echo "  arch -x86_64 /usr/local/bin/brew install cmake pkg-config openssl@3 libpng libusb" >&2
+    exit 1
+  fi
+done
+
+# Configure + build one target for one architecture in its own tree.
+# $1 arch, $2 target, then any extra -D flags. --clean-first on every build:
+# see the halftone note in the loop below, and it is also the safe choice
+# when a tree is reused across runs.
+build_arch() {
+  local a="$1" target="$2"; shift 2
+  arch_run "$a" cmake -S "$ROOT" -B "$DISTRIB/build-$a" \
+    -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON \
+    -DCMAKE_OSX_ARCHITECTURES="$a" "$@"
+  arch_run "$a" cmake --build "$DISTRIB/build-$a" --target "$target" \
+    --clean-first -j
+}
+
+# Joins the per-architecture builds of one binary into a single universal
+# file at $2. $1 is the binary's name in each tree. Each thin binary is
+# checked first: otool -L on a fat file prints a header line per slice that
+# assert_system_only would mistake for a stray library.
+lipo_arches() {
+  local name="$1" out="$2" a inputs=()
+  for a in $ARCHS; do
+    assert_system_only "$DISTRIB/build-$a/$name"
+    inputs+=("$DISTRIB/build-$a/$name")
+  done
+  lipo -create "${inputs[@]}" -output "$out"
+  echo "$name: $(lipo -archs "$out")"
+}
+
+# sister-printer-app is built once per halftone screen below -- that is the
+# whole point of this script. sister-status never links the encoder library,
+# so the screen switch cannot affect it; build it once here rather than
+# twice inside the loop.
+echo "Building sister-status ($VERSION, shared by both halftone variants; $ARCHS)…"
+cd "$ROOT"
+for a in $ARCHS; do
+  build_arch "$a" sister-status
+done
+
+echo "Rebuilding the install payload from distrib/build-<arch>/, launchd/ and docs/…"
 PAYLOAD="$DISTRIB/root-install/Library/Printers/SisterHL2030"
 LAUNCHD_DEST="$DISTRIB/root-install/Library/LaunchDaemons"
 mkdir -p "$PAYLOAD" "$LAUNCHD_DEST"
 
-cp "$ROOT/build/sister-status" "$PAYLOAD/sister-status"
+lipo_arches sister-status "$PAYLOAD/sister-status"
 cp "$ROOT/Scripts/_privileged-create-queue.sh" "$PAYLOAD/.create-queue.sh"
 chmod 755 "$PAYLOAD/sister-status" "$PAYLOAD/.create-queue.sh"
-assert_system_only "$PAYLOAD/sister-status"
 
 if [ "$SIGNED" = 1 ]; then
   echo "Signing sister-status for notarization…"
@@ -274,19 +353,18 @@ for i in "${!variant_screen[@]}"; do
 
   echo
   echo "=== $pkg_name: compiling sister-printer-app with SISTER_HALFTONE_SCREEN=$screen ==="
-  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON \
-    -DSISTER_HALFTONE_SCREEN="$screen"
-  # --clean-first: reconfiguring the same build/ only changes a compile
-  # *definition*, and a fast reconfigure+build can land in the same
+  # --clean-first (in build_arch): reconfiguring the same tree only changes
+  # a compile *definition*, and a fast reconfigure+build can land in the same
   # filesystem-mtime tick, in which case make sees nothing to rebuild and
   # silently keeps the previous screen (see CLAUDE.md's "Traps that cost
   # real time here"). This is exactly that risk, twice per run, so it is
   # not optional here.
-  cmake --build build --target sister-printer-app --clean-first -j
+  for a in $ARCHS; do
+    build_arch "$a" sister-printer-app -DSISTER_HALFTONE_SCREEN="$screen"
+  done
 
-  cp "$ROOT/build/sister-printer-app" "$PAYLOAD/sister-printer-app"
+  lipo_arches sister-printer-app "$PAYLOAD/sister-printer-app"
   chmod 755 "$PAYLOAD/sister-printer-app"
-  assert_system_only "$PAYLOAD/sister-printer-app"
   if [ "$SIGNED" = 1 ]; then
     echo "Signing sister-printer-app for notarization…"
   else
