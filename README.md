@@ -33,13 +33,9 @@ it means nothing changes if you later move to Apple Silicon.
 
 ## Is this for you?
 
-If you have a Brother HL-2030 (or HL-2030R) connected by USB to a Mac,
+If you have a Brother HL-2030 series printer connected by USB to a Mac,
 yes: running macOS 11 or later. One installer covers both Apple Silicon and
 Intel computers.
-
-This driver does **not** work with the printer over a network/Wi-Fi
-connection. Plug the printer directly into the Mac that will host it; that
-Mac then makes it available to everything else on the network.
 
 ## Two print styles
 
@@ -120,6 +116,8 @@ removes the driver, its background service, and the printer queue.
   panel, same as a modern printer.
 * **Three quality modes**: Draft (300 dpi), Normal (600 dpi), and Fine
   (1200×600 dpi).
+* **Implicit tonner saving mode**: Draft and Normal quality modes
+  automatically active the tonner saving mode.
 
 ## How it works, briefly
 
@@ -209,7 +207,7 @@ wire format was recovered.
 | --- | --- |
 | Model | Brother HL-2030 series |
 | USB | Vendor `0x04f9`, product `0x0027` |
-| Connection | USB only (no network/Wi-Fi support) |
+| Connection | USB only |
 | Paper | A4, Letter, Legal, Executive, Folio, A5, A6, B5, B6; Com-10 and DL from the manual slot |
 | Resolutions | 300, 600, and 1200×600 (Fine) dpi |
 | Duplex | Not supported |
