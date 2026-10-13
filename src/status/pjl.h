@@ -81,7 +81,7 @@ std::string pjl_command(const std::string& command);
 // completion sentinel — pjl_response_complete() does not wait for it.
 std::string pjl_supply_query();
 
-// True once a reply carries CODE= and DRUMLIFE=, i.e. everything
+// True once a reply carries complete CODE and DRUMLIFE integer lines, i.e. everything
 // pjl_supply_query() asked for that we actually parse.
 bool pjl_response_complete(const std::string& text);
 

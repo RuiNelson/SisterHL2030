@@ -179,8 +179,18 @@ the static OpenSSL, libpng and libusb it links are single-architecture. For
 Intel from an Apple Silicon Mac, `Scripts/build_x86_64_deps.sh` builds static
 x86_64 copies of those three libraries from source (Homebrew is arm64-only
 on current macOS); configure with `PKG_CONFIG_PATH` pointing at its output.
-The packaging script does all of this and joins the two builds with `lipo`;
+The packaging script builds pinned static dependencies for both architectures
+with `Scripts/build_static_deps.sh`, using macOS 11 as the minimum for the
+dependencies, PAPPL and the driver itself. It checks that minimum before joining
+the two builds with `lipo`;
 `SISTER_ARCHS="arm64"` or `"x86_64"` limits it to one.
+
+For a source build that must also run on macOS 11, build the dependencies first
+and configure with `PKG_CONFIG_PATH` pointing at their `lib/pkgconfig` directory;
+current Homebrew archives can require a newer macOS even when the driver is
+compiled for 11. `SISTER_MACOS_MIN` changes the minimum for distribution builds.
+CTest uses the printer application from the selected build directory, including
+its architecture and halftone screen.
 
 To turn a bitmap into a HL-2030 job stream directly, without printing:
 

@@ -521,7 +521,7 @@ int main(int argc, char* argv[]) {
   if (fd != STDIN_FILENO) {
     close(fd);
   }
-  if (ferror(stdout)) {
+  if (!job.finish()) {
     std::fprintf(stderr, "ERROR: Failed to write print data\n");
     return 1;
   }

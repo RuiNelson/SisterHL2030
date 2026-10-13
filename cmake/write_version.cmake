@@ -35,7 +35,7 @@ set(SISTER_VERSION_FULL "${SISTER_VERSION}+${SISTER_GIT_SHA}${SISTER_GIT_DIRTY}"
 
 get_filename_component(_dir "${SISTER_OUTPUT}" DIRECTORY)
 file(MAKE_DIRECTORY "${_dir}")
-file(WRITE "${SISTER_OUTPUT}"
+set(_contents
 "#ifndef SISTERHL2030_VERSION_H
 #define SISTERHL2030_VERSION_H
 
@@ -46,3 +46,10 @@ file(WRITE "${SISTER_OUTPUT}"
 #endif
 ")
 message(STATUS "SisterHL2030 ${SISTER_VERSION_FULL}")
+set(_previous "")
+if(EXISTS "${SISTER_OUTPUT}")
+  file(READ "${SISTER_OUTPUT}" _previous)
+endif()
+if(NOT _previous STREQUAL _contents)
+  file(WRITE "${SISTER_OUTPUT}" "${_contents}")
+endif()

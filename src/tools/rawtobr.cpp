@@ -148,13 +148,15 @@ int main(int argc, char** argv) {
     }
     const uint8_t* src = pixels.data() + row * static_cast<size_t>(bpl);
     std::memcpy(buf.data(), src, static_cast<size_t>(bpl));
+    if (width % 8 != 0) {
+      buf.back() &= static_cast<uint8_t>(0xFF << (8 - width % 8));
+    }
     ++row;
     return true;
   };
 
   sisterhl2030::Job job(stdout, path ? path : "SisterHL2030");
-  job.encode_page(params, height, bpl, next_line);
-  if (std::ferror(stdout)) {
+  if (!job.encode_page(params, height, bpl, next_line) || !job.finish()) {
     std::cerr << "write failed\n";
     return 1;
   }

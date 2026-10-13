@@ -56,6 +56,11 @@ denies `pipe2` to libusb: the SDK declares it for macOS 27+, and libusb
 would call it unguarded on older systems where it is a null symbol. Rosetta
 is only needed to *run* the x86_64 result (ctest, including
 `pappl_features`, passes under it).
+`Scripts/build_static_deps.sh` builds the same pinned dependencies for either
+architecture with a macOS 11 deployment target. Distribution builds use these
+for both slices, since current Homebrew archives may require a newer system.
+`Scripts/build_x86_64_deps.sh` remains a compatibility wrapper. The minimum is
+also propagated to PAPPL and checked on each binary before packaging.
 `Scripts/build_distribution_packages.sh` drives all of this, one tree per
 arch in `distrib/build-<arch>`, then `lipo -create`s the two, so the shipped
 `.pkg` files carry universal binaries; `assert_system_only` runs on each thin
@@ -94,7 +99,9 @@ the screen selection might have changed — `Install Sister HL2030.sh` already
 does this; a fresh `build -B` directory doesn't need it.
 
 The driver version is `project(sisterhl2030 VERSION …)` in `CMakeLists.txt`
-plus the git sha (`1.0.0+abc1234def56`). Bump the CMake version when shipping
+plus the git sha (`1.1.1+abc1234def56`). The `sister_version` target checks HEAD
+and clean/dirty state on each build, writing the header only if it changed.
+Bump the CMake version when shipping
 a user-visible driver change. `sister-printer-app --version` prints the full
 string; PAPPL advertises the semver half as `printer-firmware-string-version`.
 `Scripts/Check Sister HL2030.sh` compares the build, the install, and the

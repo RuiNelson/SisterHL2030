@@ -66,6 +66,7 @@ constexpr long kStatusDrainMs = 600;
 // Per-job state. PAPPL hands it back to every raster callback.
 struct JobState {
   bool status_only = false;  // named kStatusJobName: report status, print nothing
+  bool failed = false;
   FILE* stream = nullptr;    // funopen(3) wrapper around the PAPPL device
   std::unique_ptr<sisterhl2030::Job> job;
   sisterhl2030::PageParams params;
@@ -238,9 +239,9 @@ bool printfile(pappl_job_t* job, pappl_pr_options_t* options,
   papplJobSetImpressions(job, 1);
 
   char buffer[65536];
-  ssize_t got;
+  ssize_t got = 0;
   bool ok = true;
-  while ((got = read(fd, buffer, sizeof(buffer))) > 0) {
+  while (!papplJobIsCanceled(job) && (got = read(fd, buffer, sizeof(buffer))) > 0) {
     if (papplDeviceWrite(device, buffer, static_cast<size_t>(got)) < 0) {
       papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "Write to the printer failed.");
       ok = false;
@@ -253,7 +254,7 @@ bool printfile(pappl_job_t* job, pappl_pr_options_t* options,
   }
 
   close(fd);
-  papplDeviceFlush(device);
+  ok = papplDeviceFlush(device) && ok;
   if (ok) {
     papplJobSetImpressionsCompleted(job, 1);
   }
@@ -307,7 +308,12 @@ bool rstartpage(pappl_job_t* job, pappl_pr_options_t* options,
 
   state->raster_dpi = raster_dpi_of(options);
   quality_to_params(options->print_quality, state->raster_dpi, &state->params);
-  state->params.copies = options->copies > 0 ? options->copies : 1;
+  // PAPPL's PNG/JPEG filters replay the page for every requested copy.
+  // Raster streams use the device's copy count instead.
+  const char* format = papplJobGetFormat(job);
+  const bool image_copies = format &&
+      (!std::strcmp(format, "image/png") || !std::strcmp(format, "image/jpeg"));
+  state->params.copies = image_copies ? 1 : std::max(1, options->copies);
   state->params.papersize = pjl_paper(options->media.size_name);
   state->params.mediatype = pjl_mediatype(options->media.type);
   state->params.sourcetray = pjl_tray(options->media.source);
@@ -351,6 +357,11 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
   auto* state = static_cast<JobState*>(papplJobGetData(job));
   if (!state) return false;
   if (state->status_only) return true;
+
+  if (papplJobIsCanceled(job)) {
+    sisterhl2030::release_page_buffer(state->toner);
+    return true;
+  }
 
   unsigned width = state->width;
   unsigned height = state->height;
@@ -473,16 +484,21 @@ bool rendpage(pappl_job_t* job, pappl_pr_options_t* options,
     return true;
   };
 
-  state->job->encode_page(state->params, static_cast<int>(out_h),
-                          static_cast<int>(bpl), next_line);
-  fflush(state->stream);
+  const bool encoded = state->job->encode_page(
+      state->params, static_cast<int>(out_h), static_cast<int>(bpl), next_line,
+      [job]() { return papplJobIsCanceled(job); });
+  const bool flushed = papplDeviceFlush(device);
+  state->failed = state->failed || ((!encoded || !flushed) && !papplJobIsCanceled(job));
+  if (state->failed) {
+    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "Write to the printer failed.");
+  }
   // Drop the page buffer now: HQ1200's 1200x600 A4 toner is ~70 MB, and the
   // next rstartpage reallocates. Leaving it until rendjob keeps that RAM
   // for the rest of the job and for idle if the client stalls. clear() and
   // shrink_to_fit() are not enough on their own -- see make_page_buffer in
   // encoder/halftone.h for why free() does not get the pages back.
   sisterhl2030::release_page_buffer(state->toner);
-  return true;
+  return !state->failed;
 }
 
 // PAPPL: job is complete. Writes the closing UEL, flushes, frees JobState.
@@ -498,12 +514,12 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
     return true;
   }
 
-  state->job.reset();  // writes the closing UEL
+  bool ok = state->job->finish() && !state->failed;
+  state->job.reset();
   if (state->stream) {
-    fflush(state->stream);
-    fclose(state->stream);
+    if (fclose(state->stream) != 0) ok = false;
   }
-  papplDeviceFlush(device);
+  if (!papplDeviceFlush(device)) ok = false;
   // Normally rendpage already released this; a job abandoned between
   // rstartpage and rendpage did not. malloc_zone_pressure_relief() used to
   // stand here instead and does nothing at all -- 135 MB freed measured 135
@@ -512,7 +528,7 @@ bool rendjob(pappl_job_t* job, pappl_pr_options_t* options,
   sisterhl2030::release_page_buffer(state->toner);
   papplJobSetData(job, nullptr);
   delete state;
-  return true;
+  return ok;
 }
 
 // True when `name` is the friendly Bonjour name we assert, or one of the

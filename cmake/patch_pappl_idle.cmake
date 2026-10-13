@@ -468,6 +468,41 @@ sister_replace("${PAPPL_SRC}/pappl/device-network.c"
   papplDeviceSetData(device, NULL);
 ")
 
+# The final buffered write must report failure to the driver too. Keeping the
+# same function name lets PAPPL's own callers ignore the result as before.
+sister_replace("${PAPPL_SRC}/pappl/device.h"
+"extern void\t\tpapplDeviceFlush(pappl_device_t *device) _PAPPL_PUBLIC;"
+"extern bool\t\tpapplDeviceFlush(pappl_device_t *device) _PAPPL_PUBLIC;")
+sister_replace("${PAPPL_SRC}/pappl/device.c"
+"void
+papplDeviceFlush(pappl_device_t *device)// I - Device
+{
+  if (device && device->bufused > 0)
+  {
+    // Never drop the buffer on a failed write: say so, so a truncated job
+    // shows up in the log instead of only as a corrupt page.
+    if (pappl_write(device, device->buffer, device->bufused) < 0)
+      papplDeviceError(device, \"Unable to flush %d bytes to the device.\", (int)device->bufused);
+
+    device->bufused = 0;
+  }
+}"
+"bool
+papplDeviceFlush(pappl_device_t *device)// I - Device
+{
+  bool ok = device != NULL;
+  if (device && device->bufused > 0)
+  {
+    if (pappl_write(device, device->buffer, device->bufused) < 0)
+    {
+      papplDeviceError(device, \"Unable to flush %d bytes to the device.\", (int)device->bufused);
+      ok = false;
+    }
+    device->bufused = 0;
+  }
+  return (ok);
+}")
+
 sister_replace("${PAPPL_SRC}/pappl/device-network.c"
 "  if ((sock->snmp_fd = _papplSNMPOpen(httpAddrGetFamily(&(sock->addr->addr)))) < 0)
   {

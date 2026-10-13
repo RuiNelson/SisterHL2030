@@ -207,6 +207,7 @@ if ! command -v cmake >/dev/null 2>&1; then
 fi
 
 HOST_ARCH="$(uname -m)"
+MIN="${SISTER_MACOS_MIN:-11.0}"
 if [ -n "${SISTER_ARCHS:-}" ]; then
   ARCHS="$SISTER_ARCHS"
 elif [ "$HOST_ARCH" = arm64 ]; then
@@ -215,25 +216,12 @@ else
   ARCHS="x86_64"
 fi
 
-# Runs a command for the given architecture. The host's own architecture runs
-# it directly; x86_64 on Apple Silicon runs it natively too, but with
-# PKG_CONFIG_PATH at the x86_64 static libraries so PAPPL's configure and the
-# archive lookup in CMakeLists.txt see those instead of Homebrew's arm64 ones.
-# arm64 cannot be built on an Intel Mac.
-X86_DEPS=""
+# Build dependencies for both slices from source: Homebrew archives can use
+# APIs newer than the macOS version we promise to users.
 arch_run() {
   local a="$1"; shift
-  if [ "$a" = "$HOST_ARCH" ]; then
-    "$@"
-  elif [ "$a" = x86_64 ] && [ "$HOST_ARCH" = arm64 ]; then
-    if [ -z "$X86_DEPS" ]; then
-      X86_DEPS="$("$SCRIPT_DIR/build_x86_64_deps.sh")"
-    fi
-    PKG_CONFIG_PATH="$X86_DEPS/lib/pkgconfig" "$@"
-  else
-    echo "Cannot build $a on a $HOST_ARCH Mac." >&2
-    exit 1
-  fi
+  MACOSX_DEPLOYMENT_TARGET="$MIN" \
+    PKG_CONFIG_PATH="$DISTRIB/deps-$a/lib/pkgconfig" "$@"
 }
 
 for a in $ARCHS; do
@@ -241,10 +229,11 @@ for a in $ARCHS; do
     arm64|x86_64) ;;
     *) echo "Unsupported architecture \"$a\" in SISTER_ARCHS (arm64 or x86_64)." >&2; exit 1 ;;
   esac
-  if ! arch_run "$a" cmake --version >/dev/null 2>&1; then
-    echo "No runnable cmake for $a." >&2
+  if [ "$a" = arm64 ] && [ "$HOST_ARCH" != arm64 ]; then
+    echo "Cannot build arm64 on a $HOST_ARCH Mac." >&2
     exit 1
   fi
+  SISTER_MACOS_MIN="$MIN" /bin/bash "$SCRIPT_DIR/build_static_deps.sh" "$a" >/dev/null
 done
 
 # Configure + build one target for one architecture in its own tree.
@@ -255,7 +244,7 @@ build_arch() {
   local a="$1" target="$2"; shift 2
   arch_run "$a" cmake -S "$ROOT" -B "$DISTRIB/build-$a" \
     -DCMAKE_BUILD_TYPE=Release -DSISTER_WITH_PAPPL=ON \
-    -DCMAKE_OSX_ARCHITECTURES="$a" "$@"
+    -DCMAKE_OSX_ARCHITECTURES="$a" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MIN" "$@"
   arch_run "$a" cmake --build "$DISTRIB/build-$a" --target "$target" \
     --clean-first -j
 }
@@ -268,6 +257,12 @@ lipo_arches() {
   local name="$1" out="$2" a inputs=()
   for a in $ARCHS; do
     assert_system_only "$DISTRIB/build-$a/$name"
+    local minos
+    minos="$(xcrun vtool -show-build "$DISTRIB/build-$a/$name" | awk '/minos/{print $2}')"
+    if [ "$minos" != "$MIN" ]; then
+      echo "$name ($a) requires macOS $minos, expected $MIN. Aborting." >&2
+      exit 1
+    fi
     inputs+=("$DISTRIB/build-$a/$name")
   done
   lipo -create "${inputs[@]}" -output "$out"
