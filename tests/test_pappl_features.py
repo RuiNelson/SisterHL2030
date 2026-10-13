@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = ROOT / "build" / "sister-printer-app"
+APP = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "build" / "sister-printer-app"
 DECODE = ROOT / "Scripts" / "decode_job.py"
 FIXTURE = ROOT / "test_fixtures" / "flag.png"
 
@@ -45,7 +45,9 @@ def sink_server(port, outfile, stop):
             conn, _ = srv.accept()
         except socket.timeout:
             continue
-        conn.settimeout(2.0)
+        # HQ1200 is buffered before the first write; under Rosetta or load it
+        # can take longer than two seconds to render a page.
+        conn.settimeout(15.0)
         buf = bytearray()
         try:
             while True:
@@ -201,7 +203,6 @@ def main():
             return 1
 
         env = os.environ.copy()
-        env["HOME"] = str(work)
         env["XDG_CONFIG_HOME"] = str(work)
         server = subprocess.Popen(
             [

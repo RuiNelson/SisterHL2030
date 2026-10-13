@@ -262,7 +262,7 @@ io_service_t find_hl2030(const std::string& want_serial, std::string* error) {
   }
   io_iterator_t it = 0;
   const kern_return_t kr =
-      IOServiceGetMatchingServices(kIOMainPortDefault, matching, &it);
+      IOServiceGetMatchingServices(MACH_PORT_NULL, matching, &it);
   if (kr != KERN_SUCCESS) {
     *error = "IOServiceGetMatchingServices failed";
     return 0;

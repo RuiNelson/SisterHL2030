@@ -20,6 +20,7 @@ namespace sisterhl2030 {
 // Pulls the next packed scanline into `line`. Returns false when the page
 // is exhausted. `line` is already sized to bytes_per_line by the encoder.
 using NextLineFn = std::function<bool(std::vector<uint8_t>&)>;
+using CancelFn = std::function<bool()>;
 
 // One print job on `out`. The first encode_page() writes the opening UEL;
 // the destructor writes the closing UEL.
@@ -37,8 +38,12 @@ class Job {
   // Encode one page of `height` packed rows, each `bytes_per_line` bytes,
   // pulling rows from `next_line`. Writes a new PJL header when this is
   // the first page or when `params` differ from the previous page.
-  void encode_page(const PageParams& params, int height, int bytes_per_line,
-                   const NextLineFn& next_line);
+  // False on a stream error or cancellation. A cancelled page is not ejected.
+  bool encode_page(const PageParams& params, int height, int bytes_per_line,
+                   const NextLineFn& next_line, const CancelFn& canceled = {});
+
+  // Close the envelope and flush, once. Lets callers observe final I/O errors.
+  bool finish();
 
   // Pages accepted by encode_page() so far, including empty ones.
   int pages() const { return pages_; }
@@ -60,6 +65,8 @@ class Job {
   PageParams page_params_;
   int pages_ = 0;
   bool started_ = false;
+  bool finished_ = false;
+  bool finish_ok_ = true;
 };
 
 }  // namespace sisterhl2030

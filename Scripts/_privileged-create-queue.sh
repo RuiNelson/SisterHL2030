@@ -50,70 +50,41 @@ if [[ -z "$generated" ]]; then
   generated="everywhere"
 fi
 
-python3 - "$tmp" <<'PY'
-import re, sys
-path = sys.argv[1]
-text = open(path, encoding="latin-1").read()
+/usr/bin/ruby - "$tmp" <<'RUBY'
+path = ARGV.fetch(0)
+text = File.binread(path).force_encoding(Encoding::ISO_8859_1)
 
-def sub_line(src, key, line):
-    pat = re.compile(r'(?m)^' + re.escape(key) + r'.*\n')
-    if pat.search(src):
-        return pat.sub(line + "\n", src, count=1)
-    snmp = re.compile(r'(?m)^(\*cupsSNMPSupplies:.*\n)')
-    if snmp.search(src):
-        return snmp.sub(r'\1' + line + "\n", src, count=1)
-    return src.replace("*PPD-Adobe: \"4.3\"\n",
-                       "*PPD-Adobe: \"4.3\"\n" + line + "\n", 1)
+def sub_line(src, key, line)
+  pattern = /^#{Regexp.escape(key)}.*\n/
+  return src.sub(pattern, line + "\n") if src.match?(pattern)
+  snmp = /^\*cupsSNMPSupplies:.*\n/
+  return src.sub(snmp) { |match| match + line + "\n" } if src.match?(snmp)
+  src.sub("*PPD-Adobe: \"4.3\"\n", "*PPD-Adobe: \"4.3\"\n" + line + "\n")
+end
 
-text = re.sub(r'(?m)^\*APSupplies:.*\n', '', text)
-text = sub_line(text, "*cupsIPPSupplies:", "*cupsIPPSupplies: True")
-if "*cupsSNMPSupplies:" not in text:
-    text = sub_line(text, "*cupsIPPSupplies:", "*cupsSNMPSupplies: False")
-
-text = re.sub(r'(?m)^\*DefaultResolution:.*$',
-              '*DefaultResolution: 600dpi', text)
-text = re.sub(
-    r'(?m)^\*OpenUI \*cupsPrintQuality.*$',
-    '*OpenUI *cupsPrintQuality/Quality: PickOne',
-    text)
-text = re.sub(
-    r'(?m)^\*cupsPrintQuality Draft:.*$',
-    '*cupsPrintQuality Draft/Draft: "<</cupsInteger1 3 /HWResolution[300 300]>>setpagedevice"',
-    text)
-text = re.sub(
-    r'(?m)^\*cupsPrintQuality Normal:.*$',
-    '*cupsPrintQuality Normal/Normal: "<</cupsInteger1 4 /HWResolution[600 600]>>setpagedevice"',
-    text)
-text = re.sub(
-    r'(?m)^\*cupsPrintQuality High:.*$',
-    '*cupsPrintQuality High/Fine: "<</cupsInteger1 5 /HWResolution[600 600]>>setpagedevice"',
-    text)
-
-slot = "main" if re.search(r'(?m)^\*InputSlot main:', text) else (
-    "Main" if re.search(r'(?m)^\*InputSlot Main:', text) else None)
-if slot:
-    text = re.sub(r'(?m)^\*DefaultInputSlot:.*$',
-                  '*DefaultInputSlot: ' + slot, text)
-media = "stationery" if re.search(r'(?m)^\*MediaType stationery:', text) else (
-    "Stationery" if re.search(r'(?m)^\*MediaType Stationery:', text) else None)
-if media:
-    text = re.sub(r'(?m)^\*DefaultMediaType:.*$',
-                  '*DefaultMediaType: ' + media, text)
-
+text = text.gsub(/^\*APSupplies:.*\n/, '')
+text = sub_line(text, '*cupsIPPSupplies:', '*cupsIPPSupplies: True')
+unless text.include?('*cupsSNMPSupplies:')
+  text = sub_line(text, '*cupsSNMPSupplies:', '*cupsSNMPSupplies: False')
+end
+text = text.gsub(/^\*DefaultResolution:.*$/, '*DefaultResolution: 600dpi')
+text = text.gsub(/^\*OpenUI \*cupsPrintQuality.*$/, '*OpenUI *cupsPrintQuality/Quality: PickOne')
+[['Draft', 'Draft', 3, 300], ['Normal', 'Normal', 4, 600], ['High', 'Fine', 5, 600]].each do |key, label, quality, dpi|
+  text = text.gsub(/^\*cupsPrintQuality #{key}(?:\/[^:]*)?:.*$/,
+    "*cupsPrintQuality #{key}/#{label}: \"<</cupsInteger1 #{quality} /HWResolution[#{dpi} #{dpi}]>>setpagedevice\"")
+end
+[['InputSlot', ['main', 'Main']], ['MediaType', ['stationery', 'Stationery']]].each do |keyword, choices|
+  choice = choices.find { |value| text.match?(/^\*#{keyword} #{value}(?:\/[^:]*)?:/) }
+  text = text.gsub(/^\*Default#{keyword}:.*$/, "*Default#{keyword}: #{choice}") if choice
+end
 # Empty option codes make the print dialog drop the rest of the pane.
-def fill_empty_option(src, keyword):
-    return re.sub(
-        r'(?m)^(\*' + keyword + r' )(\S+): ""$',
-        lambda m: m.group(1) + m.group(2)
-        + ': "<</' + keyword + '(' + m.group(2) + ')>>setpagedevice"',
-        src,
-    )
-
-text = fill_empty_option(text, "MediaType")
-text = fill_empty_option(text, "InputSlot")
-
-if "GrayDeep_with_Paper_Auto-Detect" not in text:
-    text = text.rstrip() + """
+['MediaType', 'InputSlot'].each do |keyword|
+  text = text.gsub(/^(\*#{keyword} )([^\s\/:]+)(\/[^:]*)?: ""$/) do
+    "#{$1}#{$2}#{$3}: \"<</#{keyword}(#{$2})>>setpagedevice\""
+  end
+end
+unless text.include?('GrayDeep_with_Paper_Auto-Detect')
+  text = text.rstrip + "\n" + <<'PRESET'
 *APPrinterPreset GrayDeep_with_Paper_Auto-Detect/Black and White - Fine: "
 	*cupsPrintQuality High
 	*ColorModel Gray
@@ -122,10 +93,10 @@ if "GrayDeep_with_Paper_Auto-Detect" not in text:
 	com.apple.print.preset.media-front-coating autodetect
 	com.apple.print.preset.output-mode monochrome"
 *End
-"""
-
-open(path, "w", encoding="latin-1", newline="\n").write(text)
-PY
+PRESET
+end
+File.binwrite(path, text)
+RUBY
 
 # Register as an AirPrint PPD, not IPP Everywhere. Tahoe only draws the
 # Quality control from APPrinterPreset on an AirPrint queue.

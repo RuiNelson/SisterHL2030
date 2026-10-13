@@ -246,6 +246,13 @@ the line is empty.
 
 ## Checking a job without printing
 
+The encoder reports stream failures, including the final flush, to its caller.
+Cancellation stops generating further raster bands. A page canceled while it
+is still buffered on the host is discarded without a form feed; bytes already
+sent to the device cannot be recalled. Normal jobs keep the envelope above.
+PNG image copies are replayed by PAPPL, so each such page uses PCL copy count 1;
+the raster-stream path retains the requested device copy count.
+
 `Scripts/decode_job.py` reverses everything above — bands, delta lines,
 substitute and repeat edits — back into a PBM, and round-trips
 `sister-rawtobr` output byte-for-byte. Use it to confirm halftoning survived

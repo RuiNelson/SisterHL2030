@@ -75,9 +75,18 @@ Job::Job(FILE* out, std::string job_name)
 }
 
 Job::~Job() {
+  finish();
+}
+
+bool Job::finish() {
+  if (finished_) return finish_ok_;
+  finished_ = true;
   if (started_) {
     end_job();
+    started_ = false;
   }
+  finish_ok_ = fflush(out_) == 0 && !ferror(out_);
+  return finish_ok_;
 }
 
 void Job::begin_job() {
@@ -111,8 +120,11 @@ void Job::write_page_header() {
   fprintf(out_, "\033&l%dX", std::max(1, page_params_.copies));
 }
 
-void Job::encode_page(const PageParams& params, int height, int bytes_per_line,
-                      const NextLineFn& next_line) {
+bool Job::encode_page(const PageParams& params, int height, int bytes_per_line,
+                      const NextLineFn& next_line, const CancelFn& canceled) {
+  if (finished_) return false;
+  auto stopped = [&]() { return ferror(out_) || (canceled && canceled()); };
+  if (stopped()) return false;
   if (!started_) {
     begin_job();
   }
@@ -128,6 +140,7 @@ void Job::encode_page(const PageParams& params, int height, int bytes_per_line,
   Block block;
 
   if (!next_line(line)) {
+    if (stopped()) return false;
     // A page with no rows still owns its page break. `pages_` is already
     // counted and the header may already be out, so bailing without a form
     // feed leaves the sheet unejected -- and if the next page's PageParams
@@ -141,8 +154,7 @@ void Job::encode_page(const PageParams& params, int height, int bytes_per_line,
     // exactly as they were -- the escape is still written after the first line
     // is packed, never before.
     fputc('\f', out_);
-    fflush(out_);
-    return;
+    return fflush(out_) == 0 && !ferror(out_);
   }
   block.add_line(encode_line(line));
   reference.swap(line);
@@ -150,15 +162,18 @@ void Job::encode_page(const PageParams& params, int height, int bytes_per_line,
   pjl(out_, "\033*b1030m");
 
   for (int i = 1; i < height && next_line(line); ++i) {
+    if (stopped()) return false;
     std::vector<uint8_t> encoded;
     const bool new_band = (i % kLinesPerBand) == 0;
     if (new_band) {
       block.flush(out_);
+      if (stopped()) return false;
       encoded = encode_line(line);
     } else {
       encoded = encode_line(line, reference);
       if (!block.line_fits(static_cast<unsigned>(encoded.size()))) {
         block.flush(out_);
+        if (stopped()) return false;
         encoded = encode_line(line);
       }
     }
@@ -166,10 +181,12 @@ void Job::encode_page(const PageParams& params, int height, int bytes_per_line,
     reference.swap(line);
   }
 
+  if (stopped()) return false;
   block.flush(out_);
+  if (stopped()) return false;
   pjl(out_, "1030M");
   fputc('\f', out_);
-  fflush(out_);
+  return fflush(out_) == 0 && !ferror(out_);
 }
 
 }  // namespace sisterhl2030

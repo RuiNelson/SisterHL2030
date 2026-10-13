@@ -31,6 +31,22 @@ int main() {
       "@PJL INFO PAGECOUNT\r\nPAGECOUNT=3616\r\n\x0c"
       "@PJL INFO DRUMLIFE\r\nDRUMLIFE=3616\r\n\x0c";
   auto st = parse_pjl_status(ready);
+  expect(sisterhl2030::pjl_response_complete(ready), "complete reply");
+  const std::string fragmented = "CODE=10001\r\nDRUMLIFE=11400\r\n";
+  for (size_t n = 0; n < fragmented.find("11400") + 5; ++n) {
+    expect(!sisterhl2030::pjl_response_complete(fragmented.substr(0, n)),
+           "a fragmented integer does not complete the reply");
+  }
+  expect(!parse_pjl_status("DRUMLIFE=11").have_drumlife,
+         "an unterminated drumlife is not a measurement");
+  expect(sisterhl2030::pjl_response_complete(fragmented),
+         "the complete split reply finishes");
+  expect(parse_pjl_status(fragmented).drum_percent == 5,
+         "the complete split reply reports 5 percent");
+  expect(!sisterhl2030::pjl_response_complete("CODE=\r\nDRUMLIFE=\r\n"),
+         "empty integer fields do not finish the reply");
+  expect(!parse_pjl_status("DRUMLIFE=999999999999999999999\r\n").have_drumlife,
+         "overflow is not a measurement");
   expect(st.have_status && st.code == 10001, "ready CODE");
   expect(st.display == "READY", "trim DISPLAY");
   expect(st.online, "ONLINE");

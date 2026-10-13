@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -53,8 +55,15 @@ bool extract_int_field(const std::string& text, const char* key, int* out) {
     }
     const char* p = text.c_str() + pos + prefix.size();
     char* end = nullptr;
+    errno = 0;
     const long v = std::strtol(p, &end, 10);
-    if (end != p) {
+    const char* terminator = end;
+    while (*terminator == ' ' || *terminator == '\t') ++terminator;
+    // Reads can end in the middle of a number. Require the complete line,
+    // including its delimiter, before accepting a value from the printer.
+    const bool complete = *terminator == '\r' || *terminator == '\n' ||
+                          *terminator == '\f';
+    if (end != p && complete && errno != ERANGE && v >= INT_MIN && v <= INT_MAX) {
       *out = static_cast<int>(v);
       return true;
     }
@@ -225,8 +234,9 @@ std::string pjl_supply_query() {
 }
 
 bool pjl_response_complete(const std::string& text) {
-  return text.find("CODE=") != std::string::npos &&
-         text.find("DRUMLIFE=") != std::string::npos;
+  int code, drumlife;
+  return extract_int_field(text, "CODE", &code) &&
+         extract_int_field(text, "DRUMLIFE", &drumlife);
 }
 
 PrinterStatus parse_pjl_status(const std::string& text) {

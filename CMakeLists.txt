@@ -1,25 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
+# Set this before project() so compiler checks and every target use it.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum supported macOS" FORCE)
+endif()
 # Bump this when shipping a user-visible driver change. The git sha is
 # appended automatically so an install can be matched to a exact build.
-project(sisterhl2030 VERSION 1.1.0 LANGUAGES CXX)
+project(sisterhl2030 VERSION 1.1.1 LANGUAGES CXX)
 
 set(SISTER_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
-set(_sister_git_head "${CMAKE_SOURCE_DIR}/.git/HEAD")
-set(_sister_ver_deps
-  "${CMAKE_SOURCE_DIR}/cmake/write_version.cmake"
-  "${CMAKE_SOURCE_DIR}/CMakeLists.txt")
-if(EXISTS "${_sister_git_head}")
-  list(APPEND _sister_ver_deps "${_sister_git_head}")
-endif()
-add_custom_command(
-  OUTPUT "${SISTER_GENERATED_DIR}/version.h"
+add_custom_target(sister_version
   COMMAND ${CMAKE_COMMAND}
     -DSISTER_VERSION=${PROJECT_VERSION}
     -DSISTER_SOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DSISTER_OUTPUT=${SISTER_GENERATED_DIR}/version.h
     -P ${CMAKE_SOURCE_DIR}/cmake/write_version.cmake
-  DEPENDS ${_sister_ver_deps}
-  COMMENT "Writing driver version header"
+  BYPRODUCTS "${SISTER_GENERATED_DIR}/version.h"
+  COMMENT "Checking driver version"
 )
 # So the first compile after a fresh configure does not race the header.
 execute_process(
@@ -32,6 +28,9 @@ execute_process(
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+if(APPLE)
+  add_compile_options(-Werror=unguarded-availability-new)
+endif()
 
 # Build for the architecture cmake itself is running as (arm64 on Apple
 # Silicon, x86_64 on an Intel Mac or under `arch -x86_64`). Override with
@@ -127,6 +126,7 @@ if(APPLE)
     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra;-Wpedantic>
   )
   sister_compile_small(sister-status)
+  add_dependencies(sister-status sister_version)
   sister_strip(sister-status)
 endif()
 
@@ -155,7 +155,7 @@ if(SISTER_WITH_PAPPL)
   # the next cmake run rebuilds libpappl instead of reusing a fat/AppKit build.
   # The architecture is part of the value, so re-pointing a build tree at the
   # other one rebuilds it too.
-  set(PAPPL_STAMP_VALUE "text-7-${PAPPL_ARCH}")
+  set(PAPPL_STAMP_VALUE "text-8-${PAPPL_ARCH}-macos${CMAKE_OSX_DEPLOYMENT_TARGET}")
   set(PAPPL_STAMP ${PAPPL_PREFIX}/.sister-pappl-stamp)
 
   set(_pappl_stamp_now "")
@@ -190,7 +190,9 @@ if(SISTER_WITH_PAPPL)
     # 1.4.x builds against the CUPS 2.3 that ships with macOS; 2.x would drag
     # in libcups 3. --disable-shared keeps the app a single binary.
     execute_process(
-      COMMAND ${_pappl_src}/configure --prefix=${PAPPL_PREFIX}
+      COMMAND ${CMAKE_COMMAND} -E env
+              MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
+              ${_pappl_src}/configure --prefix=${PAPPL_PREFIX}
               --enable-libusb --disable-libjpeg --disable-shared
               --with-dnssd=mdnsresponder
       WORKING_DIRECTORY ${_pappl_src}
@@ -211,7 +213,9 @@ if(SISTER_WITH_PAPPL)
       message(FATAL_ERROR "PAPPL Makedefs patch failed")
     endif()
     execute_process(
-      COMMAND make -j install
+      COMMAND ${CMAKE_COMMAND} -E env
+              MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
+              make -j install
       WORKING_DIRECTORY ${_pappl_src}
       RESULT_VARIABLE _pappl_make
       OUTPUT_FILE ${CMAKE_BINARY_DIR}/pappl-build.log
@@ -262,6 +266,7 @@ if(SISTER_WITH_PAPPL)
   endforeach()
   foreach(_lib ssl crypto png16 usb-1.0)
     string(MAKE_C_IDENTIFIER "${_lib}" _tag)
+    unset(SISTER_STATIC_${_tag} CACHE)
     find_library(SISTER_STATIC_${_tag} NAMES lib${_lib}.a
                  HINTS ${_sister_hints} NO_DEFAULT_PATH)
     if(NOT SISTER_STATIC_${_tag})
@@ -314,6 +319,7 @@ if(SISTER_WITH_PAPPL)
     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:-Wall;-Wextra>
   )
   sister_compile_small(sister-printer-app)
+  add_dependencies(sister-printer-app sister_version)
   sister_strip(sister-printer-app)
 endif()
 
@@ -326,10 +332,28 @@ target_link_libraries(test_status PRIVATE sisterhl2030_status)
 enable_testing()
 add_test(NAME encoder COMMAND test_encoder)
 add_test(NAME status COMMAND test_status)
+add_test(NAME tool_regressions
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_tools.py $<TARGET_FILE:sister-rawtobr>)
+if(APPLE)
+  add_test(NAME version_freshness
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_version.py ${CMAKE_COMMAND})
+  set_tests_properties(version_freshness PROPERTIES TIMEOUT 90)
+endif()
 if(SISTER_WITH_PAPPL)
   add_test(NAME pappl_features
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_pappl_features.py)
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_pappl_features.py
+            $<TARGET_FILE:sister-printer-app>)
   set_tests_properties(pappl_features PROPERTIES TIMEOUT 120)
+  add_test(NAME pappl_regressions
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_pappl_regressions.py
+            $<TARGET_FILE:sister-printer-app> $<TARGET_FILE:write_test_raster>)
+  set_tests_properties(pappl_regressions PROPERTIES TIMEOUT 120)
+  add_executable(write_test_raster tests/write_test_raster.cpp)
+  target_link_libraries(write_test_raster PRIVATE cups cupsimage)
+  add_executable(test_device tests/test_device.cpp)
+  target_include_directories(test_device PRIVATE ${PAPPL_PREFIX}/include)
+  set_target_properties(test_device PROPERTIES LINK_FLAGS "${PAPPL_LINK_FLAGS}")
+  add_test(NAME device_flush COMMAND test_device)
   add_test(NAME driver_version
     COMMAND ${CMAKE_BINARY_DIR}/sister-printer-app --version)
   set_tests_properties(driver_version PROPERTIES

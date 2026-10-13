@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -70,6 +71,74 @@ int main() {
   using sisterhl2030::atkinson;
   using sisterhl2030::pack_toner_row;
   using sisterhl2030::rgb_to_toner;
+
+  {
+    FILE* f = tmpfile();
+    expect(f != nullptr, "tmpfile cancellation");
+    if (f) {
+      int rows = 0;
+      auto next = [&](std::vector<uint8_t>& row) {
+        ++rows;
+        std::fill(row.begin(), row.end(), 0x55);
+        return true;
+      };
+      Job job(f, "cancel before sending");
+      expect(!job.encode_page(PageParams{}, 256, 8, next, [] { return true; }),
+             "cancelled page reports cancellation");
+      expect(rows == 0 && slurp(f).empty(), "cancelled buffered page writes no bytes");
+      expect(job.finish(), "cancelled empty job can finish");
+      expect(job.finish(), "finishing an already finished job is harmless");
+      std::fclose(f);
+    }
+  }
+  {
+    FILE* f = tmpfile();
+    expect(f != nullptr, "tmpfile mid-page cancellation");
+    if (f) {
+      int rows = 0;
+      auto next = [&](std::vector<uint8_t>& row) {
+        ++rows;
+        std::fill(row.begin(), row.end(), 0x55);
+        return true;
+      };
+      {
+        Job job(f, "cancel mid-page");
+        expect(!job.encode_page(PageParams{}, 512, 8, next, [&] { return rows >= 140; }),
+               "cancellation stops the encoder between bands");
+        expect(job.finish(), "cancelled partial job can finish");
+      }
+      const auto bytes = slurp(f);
+      expect(rows == 140, "encoder stops pulling rows after cancellation");
+      expect(!contains(bytes, "1030M\f"), "cancelled partial page is not ejected");
+      std::fclose(f);
+    }
+  }
+  {
+    int descriptors[2];
+    if (pipe(descriptors) == 0) {
+      close(descriptors[0]);
+      const auto old_handler = std::signal(SIGPIPE, SIG_IGN);
+      FILE* f = fdopen(descriptors[1], "wb");
+      expect(f != nullptr, "fdopen failing output");
+      if (f) {
+        {
+          Job job(f, "broken transport");
+          expect(!job.encode_page(PageParams{}, 1, 8,
+                                  [](std::vector<uint8_t>& row) {
+                                    std::fill(row.begin(), row.end(), 0x55);
+                                    return true;
+                                  }), "final page flush detects a broken output");
+          expect(!job.finish(), "final envelope flush propagates the stream error");
+        }
+        std::fclose(f);
+      } else {
+        close(descriptors[1]);
+      }
+      std::signal(SIGPIPE, old_handler);
+    } else {
+      expect(false, "pipe failing output");
+    }
+  }
 
   {
     const unsigned w = 256;
