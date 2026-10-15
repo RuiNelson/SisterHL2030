@@ -1,0 +1,86 @@
+{
+  "en": {
+    "AM45": "This build prints shaded areas with the <b>Newspaper-style</b> halftone screen: a crisp, evenly-spaced dot pattern, the way a newspaper photo looks up close.",
+    "ATKINSON": "This build prints shaded areas with the <b>Atkinson (Pencil-style)</b> halftone: a soft, scattered texture, the way pencil shading looks up close."
+  },
+  "ar": {
+    "AM45": "تطبع هذه النسخة مناطق التظليل باستخدام شاشة halftone <b>بأسلوب الصحف</b>: نمط نقاط net و متباعد بانتظام، كما تبدو صورة newspaper من قرب.",
+    "ATKINSON": "تطبع هذه النسخة مناطق التظليل باستخدام شاشة halftone <b>Atkinson (بأسلوب القلم)</b>: ملمس soft و scattered، كما تبدو pencil shading من قرب."
+  },
+  "bn": {
+    "AM45": "এই বিল্ডটি শেডেড এলাকাগুলি <b>সংবাদপত্র-স্টাইল</b> halftone স্ক্রিন দিয়ে মুদ্রণ করে: সংবাদপত্রের ছবি কাছে দেখলে যেমন দেখায়, একটি crispy, সমান ব্যবধানের ডট প্যাটার্ন।",
+    "ATKINSON": "এই বিল্ডটি শেডেড এলাকাগুলি <b>Atkinson (পেন্সিল-স্টাইল)</b> halftone দিয়ে মুদ্রণ করে: পেন্সিল শেডিং কাছে দেখলে যেমন দেখায়, একটি নরম, ছড়িয়ে থাকা টেক্সচার।"
+  },
+  "de": {
+    "AM45": "Diese Version druckt Schattierungen mit dem <b>Zeitungsstil</b>-Halftone-Screen: einem klaren, gleichmäßig verteilten Punktmuster, wie ein Zeitungsfoto aus der Nähe aussieht.",
+    "ATKINSON": "Diese Version druckt Schattierungen mit dem <b>Atkinson (Bleistiftstil)</b>-Halftone: einer weichen, verstreuten Textur, wie Bleistiftschattierung aus der Nähe aussieht."
+  },
+  "es": {
+    "AM45": "Esta versión imprime las zonas sombreadas con la pantalla halftone <b>estilo periódico</b>: un patrón de puntos nítido y uniformemente espaciado, como se ve una foto de periódico de cerca.",
+    "ATKINSON": "Esta versión imprime las zonas sombreadas con el halftone <b>Atkinson (estilo lápiz)</b>: una textura suave y dispersa, como un sombreado a lápiz visto de cerca."
+  },
+  "fr": {
+    "AM45": "Cette version imprime les zones ombrées avec l'écran halftone <b>style journal</b> : un motif de points nets et régulièrement espacés, comme une photo de journal vue de près.",
+    "ATKINSON": "Cette version imprime les zones ombrées avec le halftone <b>Atkinson (style crayon)</b> : une texture douce et dispersée, comme un ombrage au crayon vu de près."
+  },
+  "hi": {
+    "AM45": "यह बिल्ड छायांकित क्षेत्रों को <b>अखबार-शैली</b> हाफटोन स्क्रीन से छापता है: एक साफ़, समान रूप से बिखरा बिंदु पैटर्न, जैसे अखबार की तस्वीर नज़दीक से दिखती है।",
+    "ATKINSON": "यह बिल्ड छायांकित क्षेत्रों को <b>Atkinson (पेंसिल-शैली)</b> हाफटोन से छापता है: एक मुलायम, बिखरी बनावट, जैसे पेंसिल शेडिंग नज़दीक से दिखती है।"
+  },
+  "id": {
+    "AM45": "Pemasangan ini mencetak area berbayang dengan layar halftone <b>gaya koran</b>: pola titik yang tajam dan berjarak merata, seperti foto koran dilihat dari dekat.",
+    "ATKINSON": "Pemasangan ini mencetak area berbayang dengan halftone <b>Atkinson (gaya pensil)</b>: tekstur lembut yang tersebar, seperti arsiran pensil dilihat dari dekat."
+  },
+  "it": {
+    "AM45": "Questa versione stampa le aree ombreggiate con lo schermo halftone <b>stile giornale</b>: un motivo di punti netto e uniformemente spaziato, come una foto di giornale vista da vicino.",
+    "ATKINSON": "Questa versione stampa le aree ombreggiate con l'halftone <b>Atkinson (stile matita)</b>: una texture morbida e diffusa, come un'ombreggiatura a matita vista da vicino."
+  },
+  "ja": {
+    "AM45": "このビルドは、陰影部を <b>新聞風</b> ハーフトーンスクリーンで印刷します：新聞写真を近くで見たような、鮮明で均一に並んだドットパターンです。",
+    "ATKINSON": "このビルドは、陰影部を <b>Atkinson（鉛筆風）</b> ハーフトーンで印刷します：鉛筆の陰影を近くで見たような、やわらかく scattered したテクスチャです。"
+  },
+  "ko": {
+    "AM45": "이 빌드는 음영 영역을 <b>신문 스타일</b> halftone 스크린으로 인쇄합니다. 신문 사진을 가까이에서 본 것처럼 선명하고 고르게 간격을 둔 점 패턴입니다.",
+    "ATKINSON": "이 빌드는 음영 영역을 <b>Atkinson (연필 스타일)</b> halftone으로 인쇄합니다. 연필 음영을 가까이에서 본 것처럼 부드럽고 흩어진 질감입니다."
+  },
+  "mr": {
+    "AM45": "हा बिल्ड छायांकित भाग <b>वृत्तपत्र-शैली</b> हाफटोन स्क्रीनने छापतो: वृत्तपत्रातील फोटो जवळून पाहिल्यासारखा स्पष्ट, समान अंतराचा बिंदू नमुना.",
+    "ATKINSON": "हा बिल्ड छायांकित भाग <b>Atkinson (पेन्सिल-शैली)</b> हाफटोनने छापतो: पेन्सिल शेडिंग जवळून पाहिल्यासारखी मऊ, विखुरलेली बनावट."
+  },
+  "pt_BR": {
+    "AM45": "Esta versão imprime as áreas sombreadas com a tela halftone <b>estilo jornal</b>: um padrão de pontos nítido e uniformemente espaçado, como uma foto de jornal vista de perto.",
+    "ATKINSON": "Esta versão imprime as áreas sombreadas com a tela halftone <b>Atkinson (estilo lápis)</b>: uma textura suave e difusa, como um sombreamento a lápis visto de perto."
+  },
+  "pt_PT": {
+    "AM45": "Esta versão imprime as áreas sombreadas com a tela halftone <b>estilo jornal</b>: um padrão de pontos nítido e uniformemente espaçado, como uma fotografia de jornal vista de perto.",
+    "ATKINSON": "Esta versão imprime as áreas sombreadas com a tela halftone <b>Atkinson (estilo lápis)</b>: uma textura suave e difusa, como um sombreamento a lápis visto de perto."
+  },
+  "ru": {
+    "AM45": "Эта сборка печатает затенённые области с помощью halftone-экрана <b>газетный стиль</b>: чёткий, равномерно распределённый точечный узор, как фотография в газете при ближайшем рассмотрении.",
+    "ATKINSON": "Эта сборка печатает затенённые области с помощью halftone <b>Atkinson (карандашный стиль)</b>: мягкая, рассеянная текстура, как карандашная штриховка вблизи."
+  },
+  "ta": {
+    "AM45": "இந்த பதிப்பு நிழல் பகுதிகளை <b>செய்தித்தாள் பாணி</b> halftone திரை கொண்டு அச்சிடுகிறது: செய்தித்தாள் புகைப்படத்தை அருகில் பார்ப்பது போன்ற தெளிவான, சீரான புள்ளி வடிவம்.",
+    "ATKINSON": "இந்த பதிப்பு நிழல் பகுதிகளை <b>Atkinson (பென்சில் பாணி)</b> halftone கொண்டு அச்சிடுகிறது: பென்சில் நிழலை அருகில் பார்ப்பது போன்ற மென்மையான, சிதறிய அமைப்பு."
+  },
+  "te": {
+    "AM45": "ఈ బిల్డ్ ఛాయా ప్రాంతాలను <b>వార్తాపత్రిక-శైలి</b> halftone స్క్రీన్‌తో ముద్రిస్తుంది: వార్తాపత్రిక ఫోటోను దగ్గరగా చూసినట్లు స్పష్టమైన, సమానంగా విడియున్న చుక్కల నమూనా.",
+    "ATKINSON": "ఈ బిల్డ్ ఛాయా ప్రాంతాలను <b>Atkinson (పెన్సిల్-శైలి)</b> halftoneతో ముద్రిస్తుంది: పెన్సిల్ ఛాయను దగ్గరగా చూసినట్లు మృదువైన, చెల్లాచెదురైన ఆకృతి."
+  },
+  "tr": {
+    "AM45": "Bu yapı, gölgeli alanları <b>gazete tarzı</b> halftone taramasıyla basar: gazete fotoğrafını yakından görünce olduğu gibi, net ve eşit aralıklı bir nokta deseni.",
+    "ATKINSON": "Bu yapı, gölgeli alanları <b>Atkinson (kalem tarzı)</b> halftone ile basar: yakından bakılan kalem gölgelemesine benzer, yumuşak ve dağınık bir doku."
+  },
+  "ur": {
+    "AM45": "یہ بلڈ شیڈ شدہ علاقے <b>اخبار طرز</b> halftone screen سے چھالتا ہے: اخباری تصویر کو قریب سے دیکھنے جیسا، واضح اور یکساں فاصلے والا ڈاٹ پیٹرن۔",
+    "ATKINSON": "یہ بلڈ شیڈ شدہ علاقے <b>Atkinson (پنسل طرز)</b> halftone سے چھالتا ہے: پنسل شیڈنگ کو قریب سے دیکھنے جیسا، نرم اور بکھرا ہوا texture۔"
+  },
+  "vi": {
+    "AM45": "Bản build này in các vùng đổ bóng bằng màn hình halftone <b>kiểu báo</b>: họa tiết chấm nét và cách đều, như xem ảnh báo ở gần.",
+    "ATKINSON": "Bản build này in các vùng đổ bóng bằng halftone <b>Atkinson (kiểu bút chì)</b>: kết cấu mềm, rải rác, như shading bằng bút chì xem ở gần."
+  },
+  "zh-Hans": {
+    "AM45": "此构建版本使用 <b>报纸风格</b> 半色调屏幕打印阴影区域：像报纸照片近距离观看时那样清晰、等距的点阵图案。",
+    "ATKINSON": "此构建版本使用 <b>Atkinson（铅笔风格）</b> 半色调打印阴影区域：像近距离观看铅笔阴影那样柔软、散射的纹理。"
+  }
+}

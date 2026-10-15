@@ -110,7 +110,7 @@ while [[ -z "$halftone_cmake" ]]; do
   halftone_answer="$(printf '%s' "$halftone_answer" | tr '[:lower:]' '[:upper:]')"
   case "$halftone_answer" in
     ""|FM) halftone_cmake="ATKINSON"; halftone_label="FM (Atkinson, Pencil style)" ;;
-    AM)    halftone_cmake="AM45";     halftone_label="AM (45° clustered-dot, Newspaper style)" ;;
+    AM)    halftone_cmake="AM45";     halftone_label="45° clustered-dot, Newspaper style" ;;
     *)     echo "Please type FM or AM." ;;
   esac
 done

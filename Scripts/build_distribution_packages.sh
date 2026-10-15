@@ -31,10 +31,9 @@
 # one after the other just switches which halftone screen this Mac's copy
 # uses, and a single UninstallSisterDrivers.pkg removes either one. Each
 # gets its own distribution package with a localized welcome pane
-# (resources-install/*.lproj); only en.lproj gets a style-specific callout
-# sentence (see the HALFTONE_NOTE substitution below) -- the other
-# languages keep the existing, style-agnostic instructions rather than ship
-# a machine-translated sentence in a signed installer.
+# (resources-install/*.lproj); every language now gets the style-specific
+# callout sentence, translated per locale via Scripts/apply_halftone_notes.py
+# and distrib/halftone_notes.json (see the HALFTONE_NOTE substitution below).
 #
 # Not a novice-facing script: run it by hand from a Terminal to produce
 # the packages that get handed out. Signing identities and the notarization
@@ -334,9 +333,9 @@ variant_screen=(AM45 ATKINSON)
 # Dots, not parentheses: GitHub release assets rewrite "(Foo)" to ".Foo",
 # so these names have to match what the Releases page actually shows.
 variant_suffix=(".NewspaperStyle" ".PencilStyle")
-variant_title=("Sister HL-2030 — Newspaper Style (AM halftone)" "Sister HL-2030 — Pencil Style (Atkinson halftone)")
+variant_title=("Sister HL-2030 — Newspaper Style (clustered-dot halftone)" "Sister HL-2030 — Pencil Style (Atkinson halftone)")
 variant_note=(
-  "This build prints shaded areas with the <b>AM (Newspaper-style)</b> halftone screen: a crisp, evenly-spaced dot pattern, the way a newspaper photo looks up close."
+  "This build prints shaded areas with the <b>Newspaper-style</b> halftone screen: a crisp, evenly-spaced dot pattern, the way a newspaper photo looks up close."
   "This build prints shaded areas with the <b>Atkinson (Pencil-style)</b> halftone: a soft, scattered texture, the way pencil shading looks up close."
 )
 install_pkg_names=()
@@ -392,9 +391,10 @@ for i in "${!variant_screen[@]}"; do
   # </b>, and a literal / in the replacement collides with sed's own s/../..
   # delimiter -- it fails with "bad flag in substitute command", silently
   # leaving @HALFTONE_NOTE@ untouched in a signed, shipped installer.
-  welcome_html="$(cat "$RES_BUILD/en.lproj/welcome.html")"
-  welcome_html="${welcome_html//@HALFTONE_NOTE@/$note}"
-  printf '%s\n' "$welcome_html" > "$RES_BUILD/en.lproj/welcome.html"
+  # Substitute the style-specific halftone note in every localized welcome
+  # pane (en + all other languages), using the per-locale strings in
+  # distrib/halftone_notes.json.
+  python3 "$ROOT/Scripts/apply_halftone_notes.py" "$RES_BUILD" "$screen" "$ROOT/distrib/halftone_notes.json"
 
   dist_xml="$(cat "$ROOT/distrib/distribution-install.xml.in")"
   dist_xml="${dist_xml//@VERSION@/$VERSION}"
